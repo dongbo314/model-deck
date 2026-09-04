@@ -20,7 +20,6 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      MODELDECK_HOME: ${{ runner.temp }}/Model Deck 测试
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -34,11 +33,15 @@ jobs:
       - name: Verify Windows launcher exit propagation
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          MODELDECK_HOME: ${{ runner.temp }}/Model Deck 测试
         run: |
           $env:MODELDECK_DASHBOARD_HOST = '0.0.0.0'
           cmd /d /c packaging\windows\start-modeldeck.cmd
           if ($LASTEXITCODE -eq 0) { throw 'Windows launcher did not propagate the expected failure.' }
       - run: node bin/modeldeck.mjs doctor --json
+        env:
+          MODELDECK_HOME: ${{ runner.temp }}/Model Deck 测试
       - run: npm run security:audit
       - run: npm run security:signatures
 

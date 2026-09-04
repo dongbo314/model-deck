@@ -19,7 +19,6 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      MODELDECK_HOME: ${{ runner.temp }}/Model Deck 发布测试
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
