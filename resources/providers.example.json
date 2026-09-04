@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "example",
+      "name": "Example OpenAI-compatible provider",
+      "baseUrl": "https://api.example.com/v1",
+      "apiKeyEnv": "MODELDECK_PROVIDER_EXAMPLE_KEY",
+      "models": [
+        {
+          "id": "example-chat",
+          "upstreamId": "replace-with-upstream-model-id",
+          "name": "Example Chat"
+        }
+      ]
+    }
+  ]
+}

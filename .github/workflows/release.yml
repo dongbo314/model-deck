@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-core:
+    name: Validate ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      MODELDECK_HOME: ${{ runner.temp }}/Model Deck 发布测试
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - name: Verify tag matches package version
+        shell: bash
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm ci
+      - run: npm run release:verify
+      - run: npm run check
+      - run: npm run build
+      - run: npm run smoke:stack
+      - run: npm run security:audit
+      - run: npm run security:signatures
+
+  publish-source:
+    name: Publish source preview
+    needs: validate-core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+      - run: npm ci
+      - run: npm run release:verify
+      - run: npm run release:artifacts
+      - name: Verify source archive
+        shell: bash
+        run: |
+          cd release
+          sha256sum --check SHA256SUMS
+          cd ..
+          mkdir "$RUNNER_TEMP/model-deck-source"
+          tar -xzf release/model-deck-core-v*-source.tar.gz -C "$RUNNER_TEMP/model-deck-source" --strip-components=1
+          cd "$RUNNER_TEMP/model-deck-source"
+          npm ci
+          npm run check
+          npm run build
+          npm run smoke:stack
+      - name: Create GitHub prerelease
+        shell: bash
+        run: >-
+          gh release create "$GITHUB_REF_NAME" release/*
+          --verify-tag
+          --prerelease
+          --title "Model Deck Core $GITHUB_REF_NAME"
+          --generate-notes

@@ -1,0 +1,55 @@
+{
+  "name": "model-deck-core",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Cross-platform local control plane for OpenAI-compatible models and personas.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dongbo314/model-deck.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dongbo314/model-deck/issues"
+  },
+  "homepage": "https://github.com/dongbo314/model-deck#readme",
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "modeldeck": "bin/modeldeck.mjs"
+  },
+  "scripts": {
+    "dev": "node bin/modeldeck.mjs dev",
+    "start": "node bin/modeldeck.mjs start",
+    "controller": "node controller/main.mjs",
+    "init": "node bin/modeldeck.mjs init",
+    "doctor": "node bin/modeldeck.mjs doctor",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "test": "node --test test/*.test.mjs",
+    "build": "node scripts/run-next.mjs build",
+    "smoke:stack": "node scripts/smoke-stack.mjs",
+    "release:verify": "node scripts/verify-release.mjs",
+    "release:verify:filesystem": "node scripts/verify-release.mjs --filesystem-only",
+    "release:artifacts": "node scripts/create-release-artifacts.mjs",
+    "security:audit": "npm audit --audit-level=high",
+    "security:signatures": "npm audit signatures",
+    "security:production": "npm audit --omit=dev --audit-level=high"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.3.4",
+    "typescript": "5.9.3"
+  }
+}
