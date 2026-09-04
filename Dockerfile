@@ -20,7 +20,7 @@ FROM ${NODE_IMAGE} AS runtime
 
 LABEL org.opencontainers.image.source="https://github.com/dongbo314/model-deck" \
   org.opencontainers.image.title="Model Deck Core" \
-  org.opencontainers.image.description="Source-built Model Deck Core container preview" \
+  org.opencontainers.image.description="Published Model Deck Core container preview" \
   org.opencontainers.image.licenses="Apache-2.0"
 
 ENV NODE_ENV=production \

@@ -4,7 +4,7 @@
 
 Model Deck Core 是面向 OpenAI 兼容模型提供商和可复用角色的本地跨平台控制中心。Windows、Linux 和 macOS 用户可以通过统一的控制面板和本地 API 使用模型服务，而无须在程序中捆绑模型权重、私有凭据或特定硬件运行时。
 
-> **当前状态：** `0.1.0-alpha.4` 核心预览版。远程模型提供商链路和基于源码构建的 Docker Compose 部署已经实现，并通过 CI 验证。本地推理和媒体能力包仍在路线图中，尚未作为已完成功能提供。
+> **当前状态：** `0.1.0-alpha.5` 核心预览版。远程模型提供商链路和可直接拉取的 Docker Compose 部署已经实现，并通过 CI 验证。首个 Docker Hub 镜像仅支持 `linux/amd64`；本地推理和媒体能力包仍在路线图中，尚未作为已完成功能提供。
 
 ## 版本划分
 
@@ -72,14 +72,17 @@ GitHub Release 中的 ZIP 和 tar.gz 文件是源码发行包，而不是预编�
 
 ## Docker Compose 预览版
 
-Docker 配置会直接从本仓库源码在本机构建镜像。在 Linux 或 macOS 中，先复制已被 Git 忽略的环境变量模板，并将权限限制为仅当前用户可读写；只添加模型提供商配置所引用的凭据，然后启动服务。所有 Windows 场景（包括操作 Windows 文件的 Git Bash 和 WSL）都应使用完整 Docker 中文指南中的 PowerShell 与 NTFS ACL 操作。
+Docker Compose 配置默认使用已经发布到 Docker Hub 的 [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) 镜像。在 Linux 或 macOS 中，先复制已被 Git 忽略的环境变量模板，并将权限限制为仅当前用户可读写；只添加模型提供商配置所引用的凭据，然后拉取镜像并启动服务。所有 Windows 场景（包括操作 Windows 文件的 Git Bash 和 WSL）都应使用完整 Docker 中文指南中的 PowerShell 与 NTFS ACL 操作。
 
 ```bash
 cp packaging/docker/modeldeck.env.example modeldeck.env
 chmod 600 modeldeck.env
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 docker compose logs --tail=50 model-deck
 ```
+
+当前版本的固定标签是 `0.1.0-alpha.5`；浮动标签 `alpha` 始终指向最新预览版。项目有意不发布 `latest` 标签。首个公开镜像仅支持 `linux/amd64`。如果希望使用当前检出的源码自行构建，请改用 `docker compose up --build -d`。
 
 打开日志中最后一条 `Model Deck Core dashboard:` URL。该 URL 及包含它的日志都应视为敏感信息。
 
@@ -204,8 +207,9 @@ npm run dev
 4. 完成秘密信息和个人路径扫描。
 5. 提供发行包文件清单和校验和。
 6. 在托管 Linux 环境中完成基于源码构建的非 root Docker Compose 冒烟测试，包括健康状态、回环端口发布和数据卷持久化检查。
+7. 发布带有 BuildKit provenance（构建来源证明）和 SBOM（软件物料清单）的 `linux/amd64` 镜像；发布后不依赖可变标签，而是按不可变镜像摘要（digest）重新拉取并完成运行复验。
 
-GitHub 附件仍是仅包含源码的开发者预览包。Docker Compose 会在本机根据该源码构建镜像；本版本不发布预构建容器镜像。签名的 Windows 安装程序和打包后的 Linux 服务仍属于后续发布门槛。npm tarball 不是受支持的分发格式。
+GitHub 附件仍是仅包含源码的开发者预览包，Docker Hub 则提供预构建的 Core 容器镜像。provenance 和 SBOM 可以提升构建可追溯性，但 SBOM 只是组件清单，不等同于漏洞扫描，也不是安全保证。签名的 Windows 安装程序和打包后的 Linux 服务仍属于后续发布门槛。npm tarball 不是受支持的分发格式。
 
 ## 许可证
 

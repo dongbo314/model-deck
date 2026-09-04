@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0-alpha.5
+
+- Published the first Docker Hub Core image at `docker.io/esofk/model-deck` for `linux/amd64`.
+- Added the release-specific `0.1.0-alpha.5` tag and moving `alpha` tag without publishing `latest`.
+- Made `docker compose pull` followed by `docker compose up -d` the default deployment path while retaining source builds through `docker compose up --build -d`.
+- Added BuildKit provenance and an SBOM to the published image, plus a post-publish pull and runtime revalidation by immutable digest.
+- Clarified that an SBOM is a component inventory, not a vulnerability scan or security guarantee.
+
 ## 0.1.0-alpha.4
 
 - Added a complete Simplified Chinese README and Chinese Docker deployment guide.

@@ -102,6 +102,7 @@ jobs:
     timeout-minutes: 25
     env:
       DOCKER_BUILDKIT: "1"
+      MODELDECK_IMAGE: model-deck-core:ci
       MODELDECK_MANAGEMENT_TOKEN: modeldeck-ci-management-fixture
       MODELDECK_DASHBOARD_TOKEN: modeldeck-ci-dashboard-fixture
     steps:
@@ -122,8 +123,8 @@ jobs:
       - name: Verify image runtime identity and health check
         shell: bash
         run: |
-          test "$(docker image inspect model-deck-core:local --format '{{.Config.User}}')" = "node"
-          test "$(docker image inspect model-deck-core:local --format '{{json .Config.Healthcheck.Test}}')" != "null"
+          test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Config.User}}')" = "node"
+          test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{json .Config.Healthcheck.Test}}')" != "null"
       - name: Start hardened container
         run: docker compose up --detach --wait --wait-timeout 120
       - name: Verify hardening and host-loopback publications

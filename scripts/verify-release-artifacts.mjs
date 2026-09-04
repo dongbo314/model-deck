@@ -13,9 +13,20 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDirectory = join(repositoryRoot, 'release');
 const packageDocument = JSON.parse(await readFile(join(repositoryRoot, 'package.json'), 'utf8'));
 const version = packageDocument.version;
+const containerImage = String(process.env.MODELDECK_CONTAINER_IMAGE || '');
+const containerDigest = String(process.env.MODELDECK_CONTAINER_DIGEST || '');
+const hasContainerEvidence = Boolean(containerImage || containerDigest);
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 if (typeof version !== 'string' || version.length > 64 || !semverPattern.test(version)) {
   throw new Error('package.json version must be a safe SemVer value.');
+}
+if (hasContainerEvidence) {
+  if (containerImage !== 'docker.io/esofk/model-deck') {
+    throw new Error('MODELDECK_CONTAINER_IMAGE must identify the supported Docker Hub repository.');
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(containerDigest)) {
+    throw new Error('MODELDECK_CONTAINER_DIGEST must be a sha256 OCI digest.');
+  }
 }
 
 const tag = `v${version}`;
@@ -29,7 +40,9 @@ const artifactNames = [
   `${baseName}-manifest.json`,
   `${baseName}-source.tar.gz`,
   `${baseName}-source.zip`,
-].sort();
+];
+if (hasContainerEvidence) artifactNames.push(`${baseName}-container.txt`);
+artifactNames.sort();
 const archiveEnvironment = { ...process.env, TZ: 'UTC' };
 
 function sha256(bytes) {
@@ -96,10 +109,22 @@ assert(manifest.schemaVersion === 1, 'Unsupported release manifest schema.');
 assert(manifest.product === 'Model Deck Core', 'Release manifest product is invalid.');
 assert(manifest.maturity === 'preview', 'Release manifest maturity is invalid.');
 assert(manifest.distribution === 'source', 'Release manifest distribution is invalid.');
-assert(manifest.container?.distribution === 'source-build', 'Release manifest container distribution is invalid.');
-assert(manifest.container?.imagePublished === false, 'Release manifest must not claim a prebuilt container image.');
+assert(manifest.container?.distribution === 'registry-image', 'Release manifest container distribution is invalid.');
+assert(manifest.container?.imagePublished === hasContainerEvidence, 'Release manifest container publication state is invalid.');
+assert(manifest.container?.registry === 'docker.io', 'Release manifest container registry is invalid.');
+assert(manifest.container?.image === 'esofk/model-deck', 'Release manifest container image is invalid.');
+assert(manifest.container?.versionTag === version, 'Release manifest container version tag is invalid.');
+assert(manifest.container?.floatingTag === 'alpha', 'Release manifest container floating tag is invalid.');
 assert(manifest.container?.platform === 'linux/amd64', 'Release manifest container platform is invalid.');
 assert(Array.isArray(manifest.container?.hosts) && manifest.container.hosts.length === 2, 'Release manifest container hosts are invalid.');
+assert(JSON.stringify(manifest.container?.attestations) === JSON.stringify(['provenance', 'sbom']), 'Release manifest container attestations are invalid.');
+if (hasContainerEvidence) {
+  assert(manifest.container?.digest === containerDigest, 'Release manifest container digest is invalid.');
+  assert(manifest.container?.digestEvidence === `${baseName}-container.txt`, 'Release manifest container digest evidence is invalid.');
+} else {
+  assert(!('digest' in manifest.container), 'Unpublished release manifest must not contain a container digest.');
+  assert(!('digestEvidence' in manifest.container), 'Unpublished release manifest must not name digest evidence.');
+}
 assert(manifest.version === version, 'Release manifest version does not match package.json.');
 assert(manifest.tag === tag, 'Release manifest tag does not match package.json.');
 assert(manifest.commit === commit, 'Release manifest commit does not match HEAD.');
@@ -121,6 +146,21 @@ for (const file of manifest.files) {
   });
   assert(expectedBytes.length === file.bytes, `${file.path} byte count is not derived from the tagged Git tree.`);
   assert(sha256(expectedBytes) === file.sha256, `${file.path} SHA-256 is not derived from the tagged Git tree.`);
+}
+
+if (hasContainerEvidence) {
+  const containerRecord = await readFile(join(releaseDirectory, `${baseName}-container.txt`), 'utf8');
+  const expectedRecord = [
+    `image=${containerImage}`,
+    `digest=${containerDigest}`,
+    `immutable=${containerImage}@${containerDigest}`,
+    'platform=linux/amd64',
+    `versionTag=${version}`,
+    'floatingTag=alpha',
+    `commit=${commit}`,
+    '',
+  ].join('\n');
+  assert(containerRecord === expectedRecord, 'Container digest evidence does not match the verified release image.');
 }
 
 const expectedDirectory = await mkdtemp(join(tmpdir(), 'model-deck-release-expected-'));

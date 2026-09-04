@@ -12,9 +12,20 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDirectory = join(repositoryRoot, 'release');
 const packageDocument = JSON.parse(await readFile(join(repositoryRoot, 'package.json'), 'utf8'));
 const version = packageDocument.version;
+const containerImage = String(process.env.MODELDECK_CONTAINER_IMAGE || '');
+const containerDigest = String(process.env.MODELDECK_CONTAINER_DIGEST || '');
+const hasContainerEvidence = Boolean(containerImage || containerDigest);
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 if (typeof version !== 'string' || version.length > 64 || !semverPattern.test(version)) {
   throw new Error('package.json version must be a safe SemVer value.');
+}
+if (hasContainerEvidence) {
+  if (containerImage !== 'docker.io/esofk/model-deck') {
+    throw new Error('MODELDECK_CONTAINER_IMAGE must identify the supported Docker Hub repository.');
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(containerDigest)) {
+    throw new Error('MODELDECK_CONTAINER_DIGEST must be a sha256 OCI digest.');
+  }
 }
 const expectedTag = `v${version}`;
 const requestedTag = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : null;
@@ -36,6 +47,7 @@ const archivePrefix = `${baseName}/`;
 const zipPath = join(releaseDirectory, `${baseName}-source.zip`);
 const tarPath = join(releaseDirectory, `${baseName}-source.tar.gz`);
 const manifestPath = join(releaseDirectory, `${baseName}-manifest.json`);
+const containerRecordPath = join(releaseDirectory, `${baseName}-container.txt`);
 const archiveEnvironment = { ...process.env, TZ: 'UTC' };
 
 await rm(releaseDirectory, { recursive: true, force: true });
@@ -84,15 +96,38 @@ await writeFile(manifestPath, `${JSON.stringify({
   distribution: 'source',
   supportedTargets: ['Windows 11 x64', 'Ubuntu 24.04 x64', 'macOS 14 arm64/x64'],
   container: {
-    distribution: 'source-build',
-    imagePublished: false,
+    distribution: 'registry-image',
+    imagePublished: hasContainerEvidence,
+    registry: 'docker.io',
+    image: 'esofk/model-deck',
+    versionTag: version,
+    floatingTag: 'alpha',
     platform: 'linux/amd64',
     hosts: ['Windows x64 with Docker Desktop', 'Linux x64 with Docker Engine'],
+    attestations: ['provenance', 'sbom'],
+    ...(hasContainerEvidence ? {
+      digest: containerDigest,
+      digestEvidence: basename(containerRecordPath),
+    } : {}),
   },
   files,
 }, null, 2)}\n`, 'utf8');
 
-const artifactPaths = [manifestPath, tarPath, zipPath].sort();
+const artifactPaths = [manifestPath, tarPath, zipPath];
+if (hasContainerEvidence) {
+  await writeFile(containerRecordPath, [
+    `image=${containerImage}`,
+    `digest=${containerDigest}`,
+    `immutable=${containerImage}@${containerDigest}`,
+    'platform=linux/amd64',
+    `versionTag=${version}`,
+    'floatingTag=alpha',
+    `commit=${commit}`,
+    '',
+  ].join('\n'), 'utf8');
+  artifactPaths.push(containerRecordPath);
+}
+artifactPaths.sort();
 const checksumLines = [];
 for (const path of artifactPaths) {
   const bytes = await readFile(path);

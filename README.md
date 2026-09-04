@@ -4,7 +4,7 @@
 
 Model Deck Core is a local, cross-platform control plane for OpenAI-compatible model providers and reusable personas. It gives Windows, Linux and macOS users one dashboard and one local API without bundling model weights, private credentials or hardware-specific runtimes.
 
-> **Status:** `0.1.0-alpha.4` Core Preview. The remote-provider path and a source-built Docker Compose deployment are implemented and covered by CI. Local inference and media capability packs are roadmap items, not completed features.
+> **Status:** `0.1.0-alpha.5` Core Preview. The remote-provider path and a published Docker Compose deployment are implemented and covered by CI. The first Docker Hub image supports `linux/amd64`; local inference and media capability packs remain roadmap items, not completed features.
 
 ## Editions
 
@@ -72,14 +72,17 @@ GitHub release ZIP/tar.gz files are source distributions, not prebuilt installer
 
 ## Docker Compose preview
 
-The Docker profile builds the image locally from this repository. On Linux or macOS, copy the ignored environment template with owner-only permissions, add only the provider credentials referenced by your provider configuration, then start the service. Every Windows setup, including Git Bash and WSL working on Windows files, should use the PowerShell and NTFS ACL instructions in the full Docker guide.
+The Compose profile uses the published [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) image by default. On Linux or macOS, copy the ignored environment template with owner-only permissions, add only the provider credentials referenced by your provider configuration, then pull and start the service. Every Windows setup, including Git Bash and WSL working on Windows files, should use the PowerShell and NTFS ACL instructions in the full Docker guide.
 
 ```bash
 cp packaging/docker/modeldeck.env.example modeldeck.env
 chmod 600 modeldeck.env
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 docker compose logs --tail=50 model-deck
 ```
+
+The release-specific tag is `0.1.0-alpha.5`; the moving `alpha` tag follows the newest preview. A `latest` tag is deliberately not published. The first published image supports only `linux/amd64`. To build from the checked-out source instead, use `docker compose up --build -d`.
 
 Open the last `Model Deck Core dashboard:` URL from the logs. Treat that URL and the logs containing it as sensitive.
 
@@ -204,8 +207,9 @@ A passing source build does not prove a packaged application works. Core release
 4. A secret and personal-path scan.
 5. An archive manifest and checksum.
 6. A source-built, non-root Docker Compose smoke test on hosted Linux, including health, loopback publishing and volume persistence checks.
+7. Publication of the `linux/amd64` image with BuildKit provenance and an SBOM, followed by a pull and runtime revalidation using the immutable image digest rather than a mutable tag.
 
-GitHub assets remain source-only developer previews. Docker Compose builds an image locally from that source; no prebuilt container image is published in this release. Signed Windows installers and packaged Linux services are future release gates. npm tarballs are not a supported distribution format.
+GitHub assets remain source-only developer previews, while Docker Hub provides the prebuilt Core container image. Provenance and the SBOM improve traceability, but the SBOM is an inventory rather than a vulnerability scan or security guarantee. Signed Windows installers and packaged Linux services are future release gates. npm tarballs are not a supported distribution format.
 
 ## License
 

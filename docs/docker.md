@@ -1,12 +1,24 @@
 # Docker Compose deployment
 
-The Docker profile is a Core Preview deployment for Windows x64 with Docker Desktop and Linux x64 with Docker Engine. It runs a Linux `amd64` container and builds the image locally from the checked-out source. No prebuilt image is published by this release.
+The Docker profile is a Core Preview deployment for Windows x64 with Docker Desktop and Linux x64 with Docker Engine. It runs the published [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) image as a Linux `amd64` container. The first image release does not support `linux/arm64`.
 
 ## Prerequisites
 
 - Docker Desktop with Engine 28.0 or newer on Windows, or Docker Engine 28.3.3 or newer on Linux
 - Docker Compose v2 (`docker compose`, not the legacy `docker-compose` command)
 - A remote HTTPS OpenAI-compatible provider
+
+## Image tags and release evidence
+
+| Tag | Meaning |
+|---|---|
+| `0.1.0-alpha.5` | Release-specific tag for this preview |
+| `alpha` | Moving tag for the newest alpha preview |
+| `latest` | Deliberately not published |
+
+The checked-in Compose file defaults to `docker.io/esofk/model-deck:0.1.0-alpha.5`. Prefer this release-specific tag for repeatable deployments; use `alpha` only when intentionally following the newest preview.
+
+The release workflow builds the image with BuildKit provenance and an SBOM. After publication, CI pulls the published artifact by its immutable digest and reruns the container checks against that exact artifact instead of trusting a mutable tag. Provenance records build origin and the SBOM inventories included software; an SBOM is not a vulnerability scan, exploitability assessment or security guarantee.
 
 ## Start
 
@@ -27,10 +39,11 @@ icacls.exe modeldeck.env /inheritance:r /grant:r "${identity}:(M)"
 
 Add only the provider credential variables named by `apiKeyEnv` in your provider configuration. Optionally set `MODELDECK_API_KEY` to enable the local OpenAI-compatible API. Never commit `modeldeck.env`. The Unix mode or Windows ACL protects against ordinary accounts, but a Docker or machine administrator can still inspect the values.
 
-Build and start the container:
+Pull and start the published container:
 
 ```bash
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 docker compose ps
 docker compose logs --tail=50 model-deck
 ```
@@ -58,6 +71,17 @@ docker compose logs --tail=50 model-deck
 
 Each restart or recreation creates a new Dashboard session URL.
 
+## Build from source
+
+To build the image from the current checkout instead of pulling the published image, use:
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+This is the supported development and source-audit path. It does not prove that the independently published Docker Hub artifact has the same digest; that artifact is verified separately by digest in the release workflow.
+
 ## Data and backup
 
 Configuration, personas, state and cache live under `/var/lib/modeldeck` in a named volume. `docker compose down` removes the container and network but preserves that volume.
@@ -71,14 +95,16 @@ docker compose cp model-deck:/var/lib/modeldeck ../modeldeck-backup
 
 Stopping first avoids copying files while they are changing. Run `docker compose start model-deck` after a backup if you are not immediately upgrading. The backup can contain private provider endpoints, personas and user data. Store it as sensitive data.
 
-To update a Git checkout, back up the data first, then run:
+To update to a newer published preview, back up the data first, update the Git checkout so its Compose file selects the intended release, then run:
 
 ```bash
 git pull --ff-only
-docker compose build --pull
+docker compose pull
 docker compose up -d
 docker compose ps
 ```
+
+If you intentionally maintain a source-built deployment, use `docker compose up --build -d` after updating the checkout instead.
 
 `docker compose down --volumes` permanently deletes the Model Deck named volume. Use it only when you intentionally want to erase all container configuration and data.
 
@@ -106,7 +132,7 @@ Anyone with Docker administrator access can inspect container environment variab
 - Remote provider URLs must use HTTPS.
 - Host-local HTTP providers such as `http://host.docker.internal:*` are rejected in this preview.
 - GPU inference, audio/video, MLX/MPS, ComfyUI and virtual microphone integrations are not included.
-- The image is built from source and is not currently published, signed or supplied with a container SBOM.
+- The Docker Hub image is published with BuildKit provenance and an SBOM, but it is not currently signed. The SBOM is not a vulnerability scan.
 - Hosted Linux CI is not a substitute for a manual acceptance run on every Windows Docker Desktop or Linux distribution combination.
 
 ## Troubleshooting

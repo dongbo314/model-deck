@@ -1,12 +1,24 @@
 # Docker Compose 部署
 
-Docker 配置是面向 Windows x64 Docker Desktop 和 Linux x64 Docker Engine 的核心预览部署方式。它运行 Linux `amd64` 容器，并从当前检出的源码在本机构建镜像。本版本不发布预构建镜像。
+Docker 配置是面向 Windows x64 Docker Desktop 和 Linux x64 Docker Engine 的核心预览部署方式。它会以 Linux `amd64` 容器运行已经发布的 [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) 镜像。首个镜像版本不支持 `linux/arm64`。
 
 ## 前置条件
 
 - Windows 使用 Engine 28.0 或更高版本的 Docker Desktop；Linux 使用 Docker Engine 28.3.3 或更高版本
 - Docker Compose v2（使用 `docker compose`，而不是旧版 `docker-compose`）
 - 一个远程 HTTPS OpenAI 兼容模型提供商
+
+## 镜像标签与发布证据
+
+| 标签 | 含义 |
+|---|---|
+| `0.1.0-alpha.5` | 当前预览版的固定版本标签 |
+| `alpha` | 始终指向最新 alpha 预览版的浮动标签 |
+| `latest` | 有意不发布 |
+
+仓库中的 Compose 文件默认使用 `docker.io/esofk/model-deck:0.1.0-alpha.5`。需要可重复部署时应优先使用固定版本标签；只有在明确希望自动跟随最新预览版时，才使用 `alpha`。
+
+发布流水线会为镜像生成 BuildKit provenance（构建来源证明）和 SBOM（软件物料清单）。推送完成后，CI 会按照不可变的镜像摘要（digest）拉取已发布产物，并针对这个确定产物重新执行容器检查，而不是只信任可能变化的标签。provenance 用于记录构建来源，SBOM 用于列出镜像所含软件；SBOM 不等于漏洞扫描、可利用性评估或安全保证。
 
 ## 启动
 
@@ -27,10 +39,11 @@ icacls.exe modeldeck.env /inheritance:r /grant:r "${identity}:(M)"
 
 只添加模型提供商配置中 `apiKeyEnv` 指定的凭据变量。如需启用本地 OpenAI 兼容 API，可以设置 `MODELDECK_API_KEY`。切勿提交 `modeldeck.env`。Unix 文件模式或 Windows ACL 可以防止普通账号读取，但 Docker 管理员或计算机管理员仍可检查这些值。
 
-构建并启动容器：
+拉取并启动已发布的容器：
 
 ```bash
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 docker compose ps
 docker compose logs --tail=50 model-deck
 ```
@@ -58,6 +71,17 @@ docker compose logs --tail=50 model-deck
 
 每次重启或重新创建容器都会生成新的控制面板会话 URL。
 
+## 从源码构建
+
+如果希望使用当前检出的源码自行构建，而不是拉取已发布镜像，请执行：
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+这是受支持的开发和源码审查路径，但它不能证明 Docker Hub 上独立发布的产物具有相同摘要；发布流水线会另外按 digest 对远端产物进行复验。
+
 ## 数据与备份
 
 配置、角色、状态和缓存都保存在命名卷的 `/var/lib/modeldeck` 下。`docker compose down` 会删除容器和网络，但保留该数据卷。
@@ -71,14 +95,16 @@ docker compose cp model-deck:/var/lib/modeldeck ../modeldeck-backup
 
 先停止服务可以避免复制过程中相关文件仍在变化。如果备份后不立即升级，请执行 `docker compose start model-deck`。备份可能包含私有模型提供商地址、角色和用户数据，请按敏感数据保管。
 
-更新 Git 工作副本时，请先备份数据，然后执行：
+升级到较新的公开预览版时，请先备份数据，再更新 Git 工作副本，让 Compose 文件选中目标版本，然后执行：
 
 ```bash
 git pull --ff-only
-docker compose build --pull
+docker compose pull
 docker compose up -d
 docker compose ps
 ```
+
+如果有意维护从源码构建的部署，请在更新工作副本后改用 `docker compose up --build -d`。
 
 `docker compose down --volumes` 会永久删除 Model Deck 命名卷。只有在确实要清除全部容器配置和数据时才能使用。
 
@@ -106,7 +132,7 @@ Windows Docker Desktop 必须使用 Engine 28.0 或更高版本，因为旧版 E
 - 远程模型提供商 URL 必须使用 HTTPS。
 - 当前预览版会拒绝 `http://host.docker.internal:*` 等运行在宿主机上的 HTTP 服务。
 - 不包含 GPU 推理、音视频、MLX/MPS、ComfyUI 或虚拟麦克风集成。
-- 镜像从源码构建，目前不发布、不签名，也不提供容器 SBOM。
+- Docker Hub 镜像会随附 BuildKit provenance 和 SBOM，但目前尚未签名；SBOM 不等于漏洞扫描。
 - 托管 Linux CI 不能代替每一种 Windows Docker Desktop 或 Linux 发行版组合上的人工验收。
 
 ## 故障排查
