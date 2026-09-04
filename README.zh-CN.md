@@ -66,6 +66,8 @@ npm start
 
 打开 `npm start` 输出的安全控制面板 URL。URL 片段中携带一次性会话令牌，页面加载后会从地址栏中移除。显式启用可选的 OpenAI 兼容 API 后，可以通过 <http://127.0.0.1:8080/v1> 访问。
 
+当前源码检出版本的控制面板默认使用简体中文，并在页头提供可持久保存的中英文切换。如果页面提示“需要安全会话”，不会再直接把它判定为控制器离线；服务重启会使旧的浏览器会话令牌失效，此时应重新打开最新启动日志中的完整 URL。在下一个镜像标签发布前，这些变化列在 `Unreleased` 中。
+
 Windows PowerShell 和 Linux 的具体说明分别见 [docs/windows.md](docs/windows.md) 和 [docs/linux.md](docs/linux.md)。
 
 GitHub Release 中的 ZIP 和 tar.gz 文件是源码发行包，而不是预编译安装程序。解压后，需要在目标系统上执行同样的 `npm ci && npm run build` 步骤。每个版本均包含文件清单和 `SHA256SUMS`；详情见 [docs/release-process.md](docs/release-process.md)。

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { NextRequest } from 'next/server';
+import { DASHBOARD_ERROR_CODES } from '@/controller/http/dashboard-errors.mjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,14 +30,16 @@ function controllerOrigin() {
   return `http://${host === '::1' ? '[::1]' : host}:${port}`;
 }
 
-function errorResponse(status: number, message: string) {
-  return Response.json({ error: { message, type: 'modeldeck_dashboard_proxy_error' } }, { status });
+function errorResponse(status: number, code: string, message: string) {
+  return Response.json({ error: { code, message, type: 'modeldeck_dashboard_proxy_error' } }, { status });
 }
 
-function hasDashboardToken(request: NextRequest) {
-  const expected = String(process.env.MODELDECK_DASHBOARD_TOKEN || '').trim();
+function dashboardToken() {
+  return String(process.env.MODELDECK_DASHBOARD_TOKEN || '').trim();
+}
+
+function hasDashboardToken(request: NextRequest, expected: string) {
   const supplied = String(request.headers.get('x-modeldeck-dashboard-token') || '');
-  if (!expected) return false;
   const left = Buffer.from(supplied);
   const right = Buffer.from(expected);
   return left.length === right.length && timingSafeEqual(left, right);
@@ -54,14 +57,23 @@ function isSameOrigin(request: NextRequest) {
 }
 
 async function relay(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
-  if (!isLoopbackHost(request.headers.get('host'))) return errorResponse(403, 'Dashboard requests must use a loopback Host header.');
-  if (!process.env.MODELDECK_DASHBOARD_TOKEN) return errorResponse(503, 'Dashboard session protection is not initialized. Start Core with modeldeck.');
-  if (!hasDashboardToken(request)) return errorResponse(401, 'Invalid dashboard session token.');
-  if (!['GET', 'HEAD'].includes(request.method) && !isSameOrigin(request)) return errorResponse(403, 'Cross-origin dashboard writes are not allowed.');
+  if (!isLoopbackHost(request.headers.get('host'))) {
+    return errorResponse(403, DASHBOARD_ERROR_CODES.loopbackHostRequired, 'Dashboard requests must use a loopback Host header.');
+  }
+  const expectedDashboardToken = dashboardToken();
+  if (!expectedDashboardToken) {
+    return errorResponse(503, DASHBOARD_ERROR_CODES.sessionUninitialized, 'Dashboard session protection is not initialized. Start Core with modeldeck.');
+  }
+  if (!hasDashboardToken(request, expectedDashboardToken)) {
+    return errorResponse(401, DASHBOARD_ERROR_CODES.sessionInvalid, 'Invalid dashboard session token.');
+  }
+  if (!['GET', 'HEAD'].includes(request.method) && !isSameOrigin(request)) {
+    return errorResponse(403, DASHBOARD_ERROR_CODES.crossOriginWriteDenied, 'Cross-origin dashboard writes are not allowed.');
+  }
   const { path } = await context.params;
   const targetPath = path.join('/');
   if (!ROUTES.some(([method, pattern]) => method === request.method && pattern.test(targetPath))) {
-    return errorResponse(404, 'Dashboard proxy route not found.');
+    return errorResponse(404, DASHBOARD_ERROR_CODES.routeNotFound, 'Dashboard proxy route not found.');
   }
 
   const headers = new Headers({ Accept: 'application/json, text/event-stream' });
@@ -73,13 +85,24 @@ async function relay(request: NextRequest, context: { params: Promise<{ path: st
   let body: ArrayBuffer | undefined;
   if (!['GET', 'HEAD'].includes(request.method)) {
     const declaredLength = Number(request.headers.get('content-length') || '0');
-    if (declaredLength > MAX_BODY_BYTES) return errorResponse(413, 'Request body is too large.');
+    if (declaredLength > MAX_BODY_BYTES) {
+      return errorResponse(413, DASHBOARD_ERROR_CODES.requestBodyTooLarge, 'Request body is too large.');
+    }
     body = await request.arrayBuffer();
-    if (body.byteLength > MAX_BODY_BYTES) return errorResponse(413, 'Request body is too large.');
+    if (body.byteLength > MAX_BODY_BYTES) {
+      return errorResponse(413, DASHBOARD_ERROR_CODES.requestBodyTooLarge, 'Request body is too large.');
+    }
+  }
+
+  let origin: string;
+  try {
+    origin = controllerOrigin();
+  } catch {
+    return errorResponse(503, DASHBOARD_ERROR_CODES.controllerTargetInvalid, 'The dashboard controller target is invalid.');
   }
 
   try {
-    const upstream = await fetch(`${controllerOrigin()}/${targetPath}`, {
+    const upstream = await fetch(`${origin}/${targetPath}`, {
       method: request.method,
       headers,
       body,
@@ -92,9 +115,8 @@ async function relay(request: NextRequest, context: { params: Promise<{ path: st
       if (value) responseHeaders.set(name, value);
     }
     return new Response(upstream.body, { status: upstream.status, headers: responseHeaders });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Controller request failed.';
-    return errorResponse(502, message);
+  } catch {
+    return errorResponse(502, DASHBOARD_ERROR_CODES.controllerUnavailable, 'The controller is unavailable.');
   }
 }
 

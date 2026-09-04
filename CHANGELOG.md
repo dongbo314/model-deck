@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added a complete Simplified Chinese Dashboard with a persistent Chinese/English language selector.
+- Localized built-in capability, persona, accessibility, status and error text while preserving user-supplied names and model output.
+- Distinguished missing or rejected Dashboard sessions from genuine controller outages instead of reporting every failure as `Controller offline`.
+- Added stable, non-sensitive Dashboard proxy error codes and stopped returning raw controller connection errors to the browser.
+- Built the Dashboard with Webpack content-hashed assets so replacing a container cannot leave the browser running stale Dashboard code.
+
 ## 0.1.0-alpha.5
 
 - Published the first Docker Hub Core image at `docker.io/esofk/model-deck` for `linux/amd64`.

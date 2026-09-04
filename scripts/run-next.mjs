@@ -30,7 +30,7 @@ function main() {
   }
   const require = createRequire(import.meta.url);
   const environment = sanitizedNextEnvironment();
-  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'), command], {
+  const child = spawn(process.execPath, [require.resolve('next/dist/bin/next'), command, '--webpack'], {
     env: environment,
     stdio: 'inherit',
     windowsHide: true,

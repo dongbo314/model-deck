@@ -66,6 +66,8 @@ npm start
 
 Open the secure Dashboard URL printed by `npm start`; its fragment carries a one-session token and is removed from the address bar after loading. The optional OpenAI-compatible API uses <http://127.0.0.1:8080/v1> after you explicitly enable it.
 
+The current source checkout starts the Dashboard in Simplified Chinese and provides a persistent Chinese/English selector in the header. If it reports that a secure session is required, the controller is not automatically considered offline: reopen the latest complete startup URL, because a service restart invalidates the previous browser-session token. These changes are listed under `Unreleased` until the next image tag is published.
+
 Windows PowerShell and Linux-specific notes are in [docs/windows.md](docs/windows.md) and [docs/linux.md](docs/linux.md).
 
 GitHub release ZIP/tar.gz files are source distributions, not prebuilt installers. Extract one archive, then run the same `npm ci && npm run build` steps on the target system. Each release includes a file manifest and `SHA256SUMS`; see [docs/release-process.md](docs/release-process.md).

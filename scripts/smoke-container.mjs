@@ -2,6 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
+import { DASHBOARD_ERROR_CODES } from '../controller/http/dashboard-errors.mjs';
 
 const controllerOrigin = process.env.MODELDECK_SMOKE_CONTROLLER_ORIGIN || 'http://127.0.0.1:8080';
 const dashboardOrigin = process.env.MODELDECK_SMOKE_DASHBOARD_ORIGIN || 'http://127.0.0.1:3000';
@@ -42,7 +43,10 @@ assert.deepEqual(await healthResponse.json(), {
 
 const htmlResponse = await fetch(`${dashboardOrigin}/`);
 assert.equal(htmlResponse.status, 200);
-assert.match(await htmlResponse.text(), /Model Deck Core/);
+const html = await htmlResponse.text();
+assert.match(html, /Model Deck Core/);
+assert.match(html, /简体中文/);
+assert.match(html, /\/_next\/static\/chunks\/app\/page-[a-f0-9]{16}\.js/);
 
 assert.equal((await fetch(`${controllerOrigin}/api/state`)).status, 401);
 assert.equal((await fetch(`${controllerOrigin}/v1/models`)).status, 503);
@@ -52,6 +56,14 @@ assert.equal(await requestWithHost(`${dashboardOrigin}/api/controller/api/state`
 }), 403);
 
 const dashboardHeaders = { 'X-ModelDeck-Dashboard-Token': dashboardToken };
+const missingSession = await fetch(`${dashboardOrigin}/api/controller/api/state`);
+assert.equal(missingSession.status, 401);
+assert.equal((await missingSession.json()).error.code, DASHBOARD_ERROR_CODES.sessionInvalid);
+const wrongSession = await fetch(`${dashboardOrigin}/api/controller/api/state`, {
+  headers: { 'X-ModelDeck-Dashboard-Token': 'wrong-fixture' },
+});
+assert.equal(wrongSession.status, 401);
+assert.equal((await wrongSession.json()).error.code, DASHBOARD_ERROR_CODES.sessionInvalid);
 const stateResponse = await fetch(`${dashboardOrigin}/api/controller/api/state`, { headers: dashboardHeaders });
 assert.equal(stateResponse.status, 200);
 const state = await stateResponse.json();

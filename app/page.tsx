@@ -1,6 +1,12 @@
 'use client';
 
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  classifyDashboardError,
+  connectionStatusForReason,
+  shouldOfferConnectionRetry,
+} from '@/controller/http/dashboard-errors.mjs';
+import { isLocale, translate, type Locale, type MessageKey } from './i18n';
 
 type Capability = { state: 'available' | 'planned' | 'unavailable'; reason?: string };
 type Provider = {
@@ -32,17 +38,36 @@ type State = {
 };
 type Message = { id: string; role: 'user' | 'assistant'; content: string };
 type TabId = 'status' | 'chat' | 'providers' | 'personas' | 'api' | 'roadmap';
+type ConnectionStatus = 'connecting' | 'online' | 'session-required' | 'degraded' | 'offline';
+type ConnectionReason =
+  | 'none'
+  | 'session-missing'
+  | 'session-rejected'
+  | 'session-uninitialized'
+  | 'access-blocked'
+  | 'configuration-error'
+  | 'internal-auth-error'
+  | 'controller-unavailable'
+  | 'dashboard-unreachable'
+  | 'request-timeout'
+  | 'request-denied'
+  | 'schema-mismatch'
+  | 'request-failed';
+type ConnectionRequest = { id: number; promise: Promise<ConnectionReason> };
 
-const tabs: Array<{ id: TabId; label: string; glyph: string }> = [
-  { id: 'status', label: 'Status', glyph: '◉' },
-  { id: 'chat', label: 'Chat', glyph: '◌' },
-  { id: 'providers', label: 'Providers', glyph: '◇' },
-  { id: 'personas', label: 'Personas', glyph: '◎' },
-  { id: 'api', label: 'API', glyph: '⌁' },
-  { id: 'roadmap', label: 'Packs', glyph: '＋' },
+const tabs: Array<{ id: TabId; label: MessageKey; glyph: string }> = [
+  { id: 'status', label: 'tabStatus', glyph: '◉' },
+  { id: 'chat', label: 'tabChat', glyph: '◌' },
+  { id: 'providers', label: 'tabProviders', glyph: '◇' },
+  { id: 'personas', label: 'tabPersonas', glyph: '◎' },
+  { id: 'api', label: 'tabApi', glyph: '⌁' },
+  { id: 'roadmap', label: 'tabPacks', glyph: '＋' },
 ];
 
 const dashboardControllerPath = '/api/controller';
+const dashboardSessionKey = 'modeldeck-dashboard-token';
+const localeStorageKey = 'modeldeck-locale';
+const connectionTimeoutMs = 5000;
 const tabRequirements: Record<TabId, string> = {
   status: 'dashboard',
   chat: 'remoteChat',
@@ -50,6 +75,48 @@ const tabRequirements: Record<TabId, string> = {
   personas: 'personas',
   api: 'localApi',
   roadmap: 'dashboard',
+};
+const featureNameKeys: Record<string, MessageKey> = {
+  dashboard: 'featureDashboard',
+  remoteChat: 'featureRemoteChat',
+  personas: 'featurePersonas',
+  localApi: 'featureLocalApi',
+  localInference: 'featureLocalInference',
+  memory: 'featureMemory',
+  channels: 'featureChannels',
+  audio: 'featureAudio',
+  song: 'featureSong',
+  video: 'featureVideo',
+  virtualMic: 'featureVirtualMic',
+  mlx: 'featureMlx',
+};
+const featureReasonKeys: Record<string, MessageKey> = {
+  localInference: 'reasonLocalInference',
+  memory: 'reasonMemory',
+  channels: 'reasonChannels',
+  audio: 'reasonAudio',
+  song: 'reasonSong',
+  video: 'reasonVideo',
+  virtualMic: 'reasonVirtualMic',
+};
+const featureStateKeys: Record<Capability['state'], MessageKey> = {
+  available: 'stateAvailable',
+  planned: 'statePlanned',
+  unavailable: 'stateUnavailable',
+};
+const connectionIssueKeys: Record<Exclude<ConnectionReason, 'none'>, MessageKey> = {
+  'session-missing': 'missingSession',
+  'session-rejected': 'expiredSession',
+  'session-uninitialized': 'sessionUninitialized',
+  'access-blocked': 'accessBlocked',
+  'configuration-error': 'configurationError',
+  'internal-auth-error': 'internalAuthError',
+  'controller-unavailable': 'controllerUnavailable',
+  'dashboard-unreachable': 'dashboardUnreachable',
+  'request-timeout': 'connectionTimedOut',
+  'request-denied': 'connectionRequestDenied',
+  'schema-mismatch': 'schemaMismatch',
+  'request-failed': 'connectionRequestFailed',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -97,9 +164,15 @@ function isState(value: unknown): value is State {
       && typeof persona.systemPrompt === 'string');
 }
 
-function asErrorMessage(value: unknown) {
-  if (value instanceof Error) return value.message;
-  return String(value || 'Request failed.');
+class LocalizedUiError extends Error {}
+
+function errorMessage(value: unknown, fallback: string) {
+  return value instanceof LocalizedUiError ? value.message : fallback;
+}
+
+function responseError(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.error)) return {};
+  return value.error;
 }
 
 function SectionTitle({ eyebrow, title, children }: { eyebrow: string; title: string; children?: React.ReactNode }) {
@@ -116,10 +189,14 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 export default function Home() {
+  const [locale, setLocale] = useState<Locale>('zh-CN');
+  const [localeLoaded, setLocaleLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('status');
   const [state, setState] = useState<State | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'online' | 'offline'>('connecting');
-  const [connectionError, setConnectionError] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [connectionReason, setConnectionReason] = useState<ConnectionReason>('none');
+  const [connectionHttpStatus, setConnectionHttpStatus] = useState<number | null>(null);
+  const [connectionCheckPending, setConnectionCheckPending] = useState(false);
   const [operationError, setOperationError] = useState('');
   const [dashboardToken, setDashboardToken] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -131,69 +208,199 @@ export default function Home() {
   const [personaSaving, setPersonaSaving] = useState(false);
   const [deletingPersonaId, setDeletingPersonaId] = useState('');
   const abortRef = useRef<AbortController | null>(null);
+  const connectionAbortRef = useRef<AbortController | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const keepChatAtBottomRef = useRef(true);
+  const nextConnectionRequestRef = useRef(0);
+  const connectionRequestRef = useRef<ConnectionRequest | null>(null);
   const baseUrl = state?.api.baseUrl || 'http://127.0.0.1:8080';
+  const t = useCallback(
+    (key: MessageKey, values: Record<string, string | number> = {}) => translate(locale, key, values),
+    [locale],
+  );
 
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    try {
-      if (!dashboardToken) throw new Error('Dashboard session token is missing. Open the secure URL printed by modeldeck.');
-      const response = await fetch(`${dashboardControllerPath}/api/state`, {
-        signal,
-        cache: 'no-store',
-        headers: { 'X-ModelDeck-Dashboard-Token': dashboardToken },
-      });
-      if (!response.ok) throw new Error(`Controller returned HTTP ${response.status}.`);
-      const next: unknown = await response.json();
-      if (!isState(next)) throw new Error('Controller/dashboard schema mismatch. Update both components together.');
-      setState(next);
-      setModelId((current) => current && next.models.some((model) => model.id === current) ? current : next.models[0]?.id || '');
-      setPersonaId((current) => current && next.personas.some((persona) => persona.id === current) ? current : next.personas[0]?.id || '');
-      setConnectionStatus('online');
-      setConnectionError('');
-    } catch (reason) {
-      if ((reason as Error)?.name !== 'AbortError') {
-        setConnectionStatus('offline');
-        setConnectionError(asErrorMessage(reason));
-      }
-      throw reason;
+  const setConnectionFailure = useCallback((reason: ConnectionReason, status: number | null = null) => {
+    setConnectionReason(reason);
+    setConnectionHttpStatus(status);
+    setConnectionStatus(connectionStatusForReason(reason) as ConnectionStatus);
+  }, []);
+
+  const refresh = useCallback((signal?: AbortSignal): Promise<ConnectionReason> => {
+    if (!dashboardToken) {
+      setConnectionFailure('session-missing');
+      return Promise.resolve('session-missing');
     }
-  }, [dashboardToken]);
+    if (connectionRequestRef.current) return connectionRequestRef.current.promise;
+
+    const requestId = ++nextConnectionRequestRef.current;
+    setConnectionCheckPending(true);
+    const requestController = new AbortController();
+    const abortFromLifecycle = () => requestController.abort();
+    if (signal?.aborted) requestController.abort();
+    else signal?.addEventListener('abort', abortFromLifecycle, { once: true });
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      requestController.abort();
+    }, connectionTimeoutMs);
+    const isCurrentRequest = () => connectionRequestRef.current?.id === requestId;
+
+    const task = (async (): Promise<ConnectionReason> => {
+      try {
+        let response: Response;
+        try {
+          response = await fetch(`${dashboardControllerPath}/api/state`, {
+            signal: requestController.signal,
+            cache: 'no-store',
+            headers: { 'X-ModelDeck-Dashboard-Token': dashboardToken },
+          });
+        } catch {
+          const reason = timedOut ? 'request-timeout' : signal?.aborted ? 'request-failed' : 'dashboard-unreachable';
+          if (isCurrentRequest() && !signal?.aborted) setConnectionFailure(reason);
+          return reason;
+        }
+
+        const body: unknown = await response.json().catch(() => null);
+        if (!isCurrentRequest()) return 'request-failed';
+        if (requestController.signal.aborted) {
+          const reason = timedOut ? 'request-timeout' : 'request-failed';
+          if (!signal?.aborted) setConnectionFailure(reason);
+          return reason;
+        }
+        if (!response.ok) {
+          const error = responseError(body);
+          const reason = classifyDashboardError(response.status, error) as ConnectionReason;
+          if (reason === 'session-rejected') {
+            try {
+              window.sessionStorage.removeItem(dashboardSessionKey);
+            } catch {
+              // Storage can be disabled; the rejected token still stays out of future requests.
+            }
+            setDashboardToken(null);
+          }
+          setConnectionFailure(reason, response.status);
+          return reason;
+        }
+
+        if (!isState(body)) {
+          setConnectionFailure('schema-mismatch');
+          return 'schema-mismatch';
+        }
+
+        setState(body);
+        setModelId((current) => current && body.models.some((model) => model.id === current) ? current : body.models[0]?.id || '');
+        setPersonaId((current) => current && body.personas.some((persona) => persona.id === current) ? current : body.personas[0]?.id || '');
+        setConnectionStatus('online');
+        setConnectionReason('none');
+        setConnectionHttpStatus(null);
+        return 'none';
+      } finally {
+        window.clearTimeout(timeout);
+        signal?.removeEventListener('abort', abortFromLifecycle);
+      }
+    })();
+
+    const trackedTask = task.finally(() => {
+      if (connectionRequestRef.current?.id === requestId) {
+        connectionRequestRef.current = null;
+        setConnectionCheckPending(false);
+      }
+    });
+    connectionRequestRef.current = { id: requestId, promise: trackedTask };
+    return trackedTask;
+  }, [dashboardToken, setConnectionFailure]);
+
+  const refreshAfterCurrent = useCallback(async (signal?: AbortSignal) => {
+    if (signal?.aborted) return 'request-failed';
+    const current = connectionRequestRef.current?.promise;
+    if (current) await current;
+    if (signal?.aborted) return 'request-failed';
+    return refresh(signal);
+  }, [refresh]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      let token = '';
       try {
-        const fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
-        token = fragmentToken || window.sessionStorage.getItem('modeldeck-dashboard-token') || '';
-        if (fragmentToken) {
-          window.sessionStorage.setItem('modeldeck-dashboard-token', fragmentToken);
-          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
-        }
+        const savedLocale = window.localStorage.getItem(localeStorageKey);
+        if (isLocale(savedLocale)) setLocale(savedLocale);
       } catch {
-        token = '';
-      }
-      setDashboardToken(token);
-      if (!token) {
-        setConnectionStatus('offline');
-        setConnectionError('Dashboard session token is missing. Open the secure URL printed by modeldeck.');
+        // A blocked localStorage falls back to Simplified Chinese for this session.
+      } finally {
+        setLocaleLoaded(true);
       }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
+    document.documentElement.lang = locale;
+    if (!localeLoaded) return;
+    try {
+      window.localStorage.setItem(localeStorageKey, locale);
+    } catch {
+      // Language selection still works when persistence is unavailable.
+    }
+  }, [locale, localeLoaded]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      let fragmentToken = '';
+      try {
+        fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
+      } catch {
+        fragmentToken = '';
+      }
+
+      let token = fragmentToken;
+      if (fragmentToken) {
+        try {
+          window.sessionStorage.setItem(dashboardSessionKey, fragmentToken);
+        } catch {
+          // Keep this session in memory even when browser storage is disabled.
+        }
+        try {
+          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+        } catch {
+          try {
+            window.location.hash = '';
+          } catch {
+            // Authentication still uses the in-memory token if this restricted browser also blocks hash updates.
+          }
+        }
+      } else {
+        try {
+          token = window.sessionStorage.getItem(dashboardSessionKey) || '';
+        } catch {
+          token = '';
+        }
+      }
+      setDashboardToken(token || null);
+      if (!token) setConnectionFailure('session-missing');
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [setConnectionFailure]);
+
+  useEffect(() => {
     if (!dashboardToken) return;
     const controller = new AbortController();
-    const initialLoad = window.setTimeout(() => {
-      refresh(controller.signal).catch(() => undefined);
-    }, 0);
-    const timer = window.setInterval(() => refresh().catch(() => undefined), 5000);
+    connectionAbortRef.current = controller;
+    let stopped = false;
+    let timer = 0;
+    const poll = async () => {
+      const reason = await refresh(controller.signal);
+      if (!stopped && (reason === 'none' || shouldOfferConnectionRetry(reason))) {
+        timer = window.setTimeout(poll, 5000);
+      }
+    };
+    timer = window.setTimeout(poll, 0);
     return () => {
+      stopped = true;
       controller.abort();
-      window.clearTimeout(initialLoad);
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      connectionRequestRef.current = null;
+      nextConnectionRequestRef.current += 1;
+      if (connectionAbortRef.current === controller) connectionAbortRef.current = null;
       abortRef.current?.abort();
     };
   }, [dashboardToken, refresh]);
@@ -233,6 +440,23 @@ export default function Home() {
     document.getElementById(`tab-${enabledTabs[next].id}`)?.focus();
   }
 
+  function displayPersonaName(persona: Persona) {
+    return persona.id === 'default' && persona.name === 'Default assistant' ? t('defaultPersonaName') : persona.name;
+  }
+
+  function displayPersonaDescription(persona: Persona) {
+    return persona.id === 'default' && persona.description === 'A concise, helpful general-purpose assistant.'
+      ? t('defaultPersonaDescription')
+      : persona.description || t('noDescription');
+  }
+
+  function featureReason(name: string, feature: Capability) {
+    if (!feature.reason) return t('includedCore');
+    if (name === 'mlx') return t(state?.capabilities.platform === 'darwin' ? 'reasonMlxMac' : 'reasonMlxOther');
+    const key = featureReasonKeys[name];
+    return key ? t(key) : feature.reason;
+  }
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const text = prompt.trim();
@@ -253,12 +477,12 @@ export default function Home() {
         body: JSON.stringify({ model: modelId, persona_id: personaId || undefined, messages: requestMessages, stream: false }),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message || `Chat failed with HTTP ${response.status}.`);
+      if (!response.ok) throw new LocalizedUiError(t('chatFailed', { status: response.status }));
       const content = body?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) throw new Error('Provider returned an empty reply.');
+      if (typeof content !== 'string' || !content.trim()) throw new LocalizedUiError(t('emptyReply'));
       setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', content }]);
     } catch (reason) {
-      if ((reason as Error)?.name !== 'AbortError') setOperationError(asErrorMessage(reason));
+      if ((reason as Error)?.name !== 'AbortError') setOperationError(errorMessage(reason, t('requestFailedGeneric')));
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setSending(false);
@@ -270,19 +494,21 @@ export default function Home() {
     if (personaSaving || connectionStatus !== 'online' || !featureAvailable('personas')) return;
     setPersonaSaving(true);
     setOperationError('');
+    const connectionSignal = connectionAbortRef.current?.signal;
     try {
       const response = await fetch(`${dashboardControllerPath}/api/personas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-ModelDeck-Dashboard-Token': dashboardToken || '' },
+        signal: connectionSignal,
         body: JSON.stringify(personaDraft),
       });
       const body = await response.json();
-      if (!response.ok) throw new Error(body?.error?.message || 'Unable to create persona.');
+      if (!response.ok) throw new LocalizedUiError(t('createPersonaFailed'));
       setPersonaDraft({ name: '', description: '', systemPrompt: '' });
-      await refresh();
+      await refreshAfterCurrent(connectionSignal);
       setPersonaId(body.persona.id);
     } catch (reason) {
-      setOperationError(asErrorMessage(reason));
+      if ((reason as Error)?.name !== 'AbortError') setOperationError(errorMessage(reason, t('createPersonaFailed')));
     } finally {
       setPersonaSaving(false);
     }
@@ -291,21 +517,23 @@ export default function Home() {
   async function removePersona(id: string) {
     const persona = state?.personas.find((entry) => entry.id === id);
     if (!persona || id === 'default' || deletingPersonaId || connectionStatus !== 'online' || !featureAvailable('personas')) return;
-    if (!window.confirm(`Delete persona “${persona.name}”? This cannot be undone.`)) return;
+    const name = displayPersonaName(persona);
+    if (!window.confirm(t('deletePersonaConfirm', { name }))) return;
     setDeletingPersonaId(id);
     setOperationError('');
+    const connectionSignal = connectionAbortRef.current?.signal;
     try {
       const response = await fetch(`${dashboardControllerPath}/api/personas/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: { 'X-ModelDeck-Dashboard-Token': dashboardToken || '' },
+        signal: connectionSignal,
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        throw new Error(body?.error?.message || 'Unable to delete persona.');
+        throw new LocalizedUiError(t('deletePersonaFailed'));
       }
-      await refresh();
+      await refreshAfterCurrent(connectionSignal);
     } catch (reason) {
-      setOperationError(asErrorMessage(reason));
+      if ((reason as Error)?.name !== 'AbortError') setOperationError(errorMessage(reason, t('deletePersonaFailed')));
     } finally {
       setDeletingPersonaId('');
     }
@@ -317,17 +545,34 @@ export default function Home() {
   const canUseChat = connected && featureAvailable('remoteChat');
   const canUsePersonas = connected && featureAvailable('personas');
   const connectionLabel = connectionStatus === 'connecting'
-    ? 'Connecting'
-    : connectionStatus === 'offline'
-      ? 'Controller offline'
-      : state?.capabilities.network.loopbackOnly ? 'Local connection' : 'Connected';
+    ? t('connectionConnecting')
+    : connectionStatus === 'session-required'
+      ? t('connectionSessionRequired')
+      : connectionStatus === 'degraded'
+        ? t('connectionProxyIssue')
+        : connectionStatus === 'offline'
+          ? t('connectionOffline')
+          : state?.capabilities.network.loopbackOnly ? t('connectionLocal') : t('connectionConnected');
+  const controllerLabel = connectionStatus === 'connecting'
+    ? t('checking')
+    : connectionStatus === 'online'
+      ? t('ready')
+      : connectionStatus === 'session-required'
+        ? t('sessionRequired')
+        : connectionStatus === 'degraded' ? t('attentionRequired') : t('offline');
+  const connectionMessage = connectionReason === 'none'
+    ? ''
+    : (connectionReason === 'request-failed' || connectionReason === 'request-denied') && connectionHttpStatus
+      ? t('proxyError', { status: connectionHttpStatus })
+      : t(connectionIssueKeys[connectionReason]);
+  const showConnectionRetry = shouldOfferConnectionRetry(connectionReason);
   const apiAuthorization = state?.api.enabled ? '-H "Authorization: Bearer $MODELDECK_API_KEY" ' : '';
 
   return (
     <main className="shell">
       <aside className="rail">
         <div className="brand" aria-label="Model Deck Core">MD</div>
-        <nav aria-label="Primary" role="tablist">
+        <nav aria-label={t('primaryNavigation')} role="tablist">
           {tabs.map((tab) => (
             <button
               className={activeTab === tab.id ? 'nav-item active' : 'nav-item'}
@@ -343,86 +588,105 @@ export default function Home() {
               onClick={() => selectTab(tab.id)}
               onKeyDown={(event) => handleTabKeyDown(event, tab.id)}
             >
-              <span aria-hidden="true">{tab.glyph}</span>{tab.label}
+              <span aria-hidden="true">{tab.glyph}</span>{t(tab.label)}
             </button>
           ))}
         </nav>
-        <p className="rail-note">CORE<br />PREVIEW</p>
+        <p className="rail-note">{t('corePreview')}</p>
       </aside>
 
       <div className="workspace">
         <header className="topbar">
-          <div><p>LOCAL CONTROL PLANE</p><h1>Model Deck Core</h1></div>
-          <span className={connectionStatus === 'offline' ? 'connection down' : 'connection'} role="status" aria-live="polite"><i />{connectionLabel}</span>
+          <div><p>{t('appEyebrow')}</p><h1>Model Deck Core</h1></div>
+          <div className="topbar-actions">
+            <label className="language-control">
+              <span className="sr-only">{t('language')}</span>
+              <select
+                aria-label={t('language')}
+                value={locale}
+                onChange={(event) => {
+                  if (isLocale(event.target.value)) {
+                    setOperationError('');
+                    setLocaleLoaded(true);
+                    setLocale(event.target.value);
+                  }
+                }}
+              >
+                <option value="zh-CN">{t('simplifiedChinese')}</option>
+                <option value="en">{t('english')}</option>
+              </select>
+            </label>
+            <span className={`connection ${connectionStatus === 'offline' ? 'down' : connectionStatus === 'online' || connectionStatus === 'connecting' ? '' : 'attention'}`} role="status" aria-live="polite"><i />{connectionLabel}</span>
+          </div>
         </header>
 
-        {connectionError && <div className="alert" role="alert"><span>{connectionError}</span><button type="button" onClick={() => { setConnectionStatus('connecting'); refresh().catch(() => undefined); }}>Retry</button></div>}
-        {operationError && <div className="alert operation-alert" role="alert"><span>{operationError}</span><button type="button" onClick={() => setOperationError('')}>Dismiss</button></div>}
+        {connectionMessage && <div className={`alert connection-alert ${connectionStatus === 'offline' ? '' : 'attention-alert'}`} role="alert"><span>{connectionMessage}</span>{showConnectionRetry && <button type="button" disabled={connectionCheckPending} onClick={() => { setConnectionStatus('connecting'); refresh(connectionAbortRef.current?.signal); }}>{t('retry')}</button>}</div>}
+        {operationError && <div className="alert operation-alert" role="alert"><span>{operationError}</span><button type="button" onClick={() => setOperationError('')}>{t('dismiss')}</button></div>}
 
         <section className="panel" id="panel-status" role="tabpanel" aria-labelledby="tab-status" hidden={activeTab !== 'status'}>
-          <SectionTitle eyebrow="RUNTIME" title="Core status"><span className="badge">{state?.capabilities.maturity || 'preview'}</span></SectionTitle>
+          <SectionTitle eyebrow={t('runtime')} title={t('coreStatus')}><span className="badge">{state?.capabilities.maturity === 'preview' || !state ? t('preview') : state.capabilities.maturity}</span></SectionTitle>
           <div className="metric-grid">
-            <article><span>Controller</span><strong>{connectionStatus === 'offline' ? 'Offline' : connectionStatus === 'connecting' ? 'Connecting' : 'Ready'}</strong><small>{baseUrl}</small></article>
-            <article><span>Host</span><strong>{state ? `${state.capabilities.platformLabel} ${state.capabilities.architecture}` : '—'}</strong><small>Detected by the controller</small></article>
-            <article><span>Providers</span><strong>{configuredProviders}/{state?.providers.length || 0}</strong><small>Credentials available</small></article>
-            <article><span>Core features</span><strong>{availableFeatures}</strong><small>Optional packs stay isolated</small></article>
+            <article><span>{t('controller')}</span><strong>{controllerLabel}</strong><small>{baseUrl}</small></article>
+            <article><span>{t('host')}</span><strong>{state ? `${state.capabilities.platformLabel} ${state.capabilities.architecture}` : '—'}</strong><small>{t('detectedByController')}</small></article>
+            <article><span>{t('providers')}</span><strong>{configuredProviders}/{state?.providers.length || 0}</strong><small>{t('credentialsAvailable')}</small></article>
+            <article><span>{t('coreFeatures')}</span><strong>{availableFeatures}</strong><small>{t('optionalPacksIsolated')}</small></article>
           </div>
           <div className="two-column">
             <article className="card">
-              <SectionTitle eyebrow="SECURITY" title="Local by default" />
-              <p>{state?.capabilities.network.loopbackOnly ? 'The supported launch configuration exposes Core Preview on the host loopback only.' : 'Review the active network configuration before use.'} It does not download models or enable application telemetry.</p>
-              <dl className="facts"><div><dt>LAN control</dt><dd>{state?.capabilities.network.lanControl ? 'Enabled' : 'Disabled'}</dd></div><div><dt>Secrets</dt><dd>Environment variables</dd></div><div><dt>User data</dt><dd>Outside the installation directory</dd></div></dl>
+              <SectionTitle eyebrow={t('security')} title={t('localByDefault')} />
+              <p>{state?.capabilities.network.loopbackOnly ? t('loopbackSummary') : t('networkReview')} {t('noTelemetry')}</p>
+              <dl className="facts"><div><dt>{t('lanControl')}</dt><dd>{state?.capabilities.network.lanControl ? t('enabled') : t('disabled')}</dd></div><div><dt>{t('secrets')}</dt><dd>{t('environmentVariables')}</dd></div><div><dt>{t('userData')}</dt><dd>{t('outsideInstall')}</dd></div></dl>
             </article>
             <article className="card">
-              <SectionTitle eyebrow="NEXT STEP" title={state?.models.length ? 'Start a conversation' : 'Configure a provider'} />
-              <p>{state?.models.length ? 'Choose Chat to use any configured OpenAI-compatible model.' : 'Run modeldeck config-path, add a provider and model alias, then restart the controller.'}</p>
-              <button className="primary" type="button" disabled={!connected} onClick={() => selectTab(state?.models.length ? 'chat' : 'providers')}>{state?.models.length ? 'Open chat' : 'View setup'}</button>
+              <SectionTitle eyebrow={t('nextStep')} title={state?.models.length ? t('startConversation') : t('configureProvider')} />
+              <p>{state?.models.length ? t('chooseChat') : t('configureProviderHelp')}</p>
+              <button className="primary" type="button" disabled={!connected} onClick={() => selectTab(state?.models.length ? 'chat' : 'providers')}>{state?.models.length ? t('openChat') : t('viewSetup')}</button>
             </article>
           </div>
         </section>
 
         <section className="panel chat-panel" id="panel-chat" role="tabpanel" aria-labelledby="tab-chat" hidden={activeTab !== 'chat'}>
-          <SectionTitle eyebrow="OPENAI-COMPATIBLE" title="Chat">
-            {sending && <button className="quiet" type="button" onClick={() => abortRef.current?.abort()}>Stop</button>}
+          <SectionTitle eyebrow={t('openaiCompatible')} title={t('chat')}>
+            {sending && <button className="quiet" type="button" onClick={() => abortRef.current?.abort()}>{t('stop')}</button>}
           </SectionTitle>
           <div className="chat-controls">
-            <label>Model<select value={modelId} onChange={(event) => setModelId(event.target.value)} disabled={!canUseChat || !state?.models.length}>{state?.models.length ? state.models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>) : <option value="">No model configured</option>}</select></label>
-            <label>Persona<select value={personaId} onChange={(event) => setPersonaId(event.target.value)} disabled={!canUseChat}>{state?.personas.map((persona) => <option key={persona.id} value={persona.id}>{persona.name}</option>)}</select></label>
+            <label>{t('model')}<select value={modelId} onChange={(event) => setModelId(event.target.value)} disabled={!canUseChat || !state?.models.length}>{state?.models.length ? state.models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>) : <option value="">{t('noModelConfigured')}</option>}</select></label>
+            <label>{t('persona')}<select value={personaId} onChange={(event) => setPersonaId(event.target.value)} disabled={!canUseChat}>{state?.personas.map((persona) => <option key={persona.id} value={persona.id}>{displayPersonaName(persona)}</option>)}</select></label>
           </div>
           <div className="messages" ref={messagesRef} aria-live="off" onScroll={() => {
             const viewport = messagesRef.current;
             if (viewport) keepChatAtBottomRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
           }}>
-            {!messages.length && <Empty>Messages stay in this browser session. Configure a provider before sending the first prompt.</Empty>}
-            {messages.map((message) => <article className={`message ${message.role}`} key={message.id}><span>{message.role === 'user' ? 'You' : 'Assistant'}</span><p>{message.content}</p></article>)}
-            {sending && <article className="message assistant pending"><span>Assistant</span><p>Waiting for the provider…</p></article>}
+            {!messages.length && <Empty>{t('messagesStayLocal')}</Empty>}
+            {messages.map((message) => <article className={`message ${message.role}`} key={message.id}><span>{message.role === 'user' ? t('you') : t('assistant')}</span><p>{message.content}</p></article>)}
+            {sending && <article className="message assistant pending"><span>{t('assistant')}</span><p>{t('waitingProviderEllipsis')}</p></article>}
             <div ref={messageEndRef} />
           </div>
-          <p className="sr-only" role="status">{sending ? 'Waiting for the provider.' : messages.at(-1)?.role === 'assistant' ? 'Assistant response received.' : ''}</p>
+          <p className="sr-only" role="status">{sending ? t('waitingProvider') : messages.at(-1)?.role === 'assistant' ? t('assistantReceived') : ''}</p>
           <form className="composer" onSubmit={sendMessage}>
-            <label htmlFor="prompt">Message</label>
-            <textarea id="prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Ask the configured model…" rows={4} disabled={!canUseChat} />
-            <button className="primary" type="submit" disabled={!canUseChat || !prompt.trim() || !modelId || sending}>{sending ? 'Sending…' : 'Send'}</button>
+            <label htmlFor="prompt">{t('message')}</label>
+            <textarea id="prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder={t('promptPlaceholder')} rows={4} disabled={!canUseChat} />
+            <button className="primary" type="submit" disabled={!canUseChat || !prompt.trim() || !modelId || sending}>{sending ? t('sending') : t('send')}</button>
           </form>
         </section>
 
         <section className="panel" id="panel-providers" role="tabpanel" aria-labelledby="tab-providers" hidden={activeTab !== 'providers'}>
-          <SectionTitle eyebrow="ROUTING" title="Providers"><span className="badge">{state?.providers.length || 0} configured</span></SectionTitle>
-          {!state ? <Empty>Provider data is unavailable until the controller connects.</Empty> : !state.providers.length ? <Empty>No providers are configured yet.</Empty> : <div className="list">{state.providers.map((provider) => <article className="list-row" key={provider.id}><div><strong>{provider.name}</strong><span>{provider.baseUrl}</span></div><div><span className={provider.credentialConfigured ? 'state ok' : 'state warn'}>{provider.credentialConfigured ? 'Ready' : 'Missing key'}</span><small>{provider.models.length} model aliases</small></div></article>)}</div>}
+          <SectionTitle eyebrow={t('routing')} title={t('providers')}><span className="badge">{t('configuredCount', { count: state?.providers.length || 0 })}</span></SectionTitle>
+          {!state ? <Empty>{t('providerUnavailable')}</Empty> : !state.providers.length ? <Empty>{t('noProviders')}</Empty> : <div className="list">{state.providers.map((provider) => <article className="list-row" key={provider.id}><div><strong>{provider.name}</strong><span>{provider.baseUrl}</span></div><div><span className={provider.credentialConfigured ? 'state ok' : 'state warn'}>{provider.credentialConfigured ? t('ready') : t('missingKey')}</span><small>{t('modelAliasCount', { count: provider.models.length })}</small></div></article>)}</div>}
           <article className="card setup-card">
-            <h3>Configuration file</h3><code>{state?.paths.providers || 'Unavailable until the controller connects'}</code>
-            <p>Provider files contain endpoint metadata and model aliases only. Put credentials in the environment variable named by <code>apiKeyEnv</code>.</p>
+            <h3>{t('configurationFile')}</h3><code>{state?.paths.providers || t('unavailableUntilConnected')}</code>
+            <p>{t('providerFileHelp')}</p>
             <pre>{`{
   "schemaVersion": 1,
   "providers": [{
     "id": "team",
-    "name": "Team gateway",
+    "name": "${t('exampleTeamGateway')}",
     "baseUrl": "https://api.example.com/v1",
     "apiKeyEnv": "MODELDECK_PROVIDER_TEAM_KEY",
     "models": [{
       "id": "team-chat",
       "upstreamId": "provider-model-id",
-      "name": "Team Chat"
+      "name": "${t('exampleTeamChat')}"
     }]
   }]
 }`}</pre>
@@ -430,31 +694,34 @@ export default function Home() {
         </section>
 
         <section className="panel" id="panel-personas" role="tabpanel" aria-labelledby="tab-personas" hidden={activeTab !== 'personas'}>
-          <SectionTitle eyebrow="IDENTITY" title="Personas"><span className="badge">{state?.personas.length || 0}</span></SectionTitle>
-          {!state ? <Empty>Persona data is unavailable until the controller connects.</Empty> : <div className="persona-grid">{state.personas.map((persona) => <article className="persona" key={persona.id}><div><strong>{persona.name}</strong><span>{persona.id}</span></div><p>{persona.description || 'No description.'}</p>{persona.id !== 'default' && <button className="danger" type="button" disabled={!canUsePersonas || Boolean(deletingPersonaId)} aria-label={`Delete persona ${persona.name}`} onClick={() => removePersona(persona.id)}>{deletingPersonaId === persona.id ? 'Deleting…' : 'Delete'}</button>}</article>)}</div>}
+          <SectionTitle eyebrow={t('identity')} title={t('tabPersonas')}><span className="badge">{state?.personas.length || 0}</span></SectionTitle>
+          {!state ? <Empty>{t('personaUnavailable')}</Empty> : <div className="persona-grid">{state.personas.map((persona) => {
+            const name = displayPersonaName(persona);
+            return <article className="persona" key={persona.id}><div><strong>{name}</strong><span>{persona.id}</span></div><p>{displayPersonaDescription(persona)}</p>{persona.id !== 'default' && <button className="danger" type="button" disabled={!canUsePersonas || Boolean(deletingPersonaId)} aria-label={t('deletePersonaAria', { name })} onClick={() => removePersona(persona.id)}>{deletingPersonaId === persona.id ? t('deleting') : t('delete')}</button>}</article>;
+          })}</div>}
           <form className="card persona-form" onSubmit={createPersona}>
-            <h3>Create persona</h3>
-            <label>Name<input required maxLength={80} disabled={!canUsePersonas} value={personaDraft.name} onChange={(event) => setPersonaDraft({ ...personaDraft, name: event.target.value })} /></label>
-            <label>Description<input maxLength={300} disabled={!canUsePersonas} value={personaDraft.description} onChange={(event) => setPersonaDraft({ ...personaDraft, description: event.target.value })} /></label>
-            <label>System prompt<textarea required maxLength={20000} rows={6} disabled={!canUsePersonas} value={personaDraft.systemPrompt} onChange={(event) => setPersonaDraft({ ...personaDraft, systemPrompt: event.target.value })} /></label>
-            <button className="primary" type="submit" disabled={!canUsePersonas || personaSaving}>{personaSaving ? 'Saving…' : 'Create persona'}</button>
+            <h3>{t('createPersona')}</h3>
+            <label>{t('name')}<input required maxLength={80} disabled={!canUsePersonas} value={personaDraft.name} onChange={(event) => setPersonaDraft({ ...personaDraft, name: event.target.value })} /></label>
+            <label>{t('description')}<input maxLength={300} disabled={!canUsePersonas} value={personaDraft.description} onChange={(event) => setPersonaDraft({ ...personaDraft, description: event.target.value })} /></label>
+            <label>{t('systemPrompt')}<textarea required maxLength={20000} rows={6} disabled={!canUsePersonas} value={personaDraft.systemPrompt} onChange={(event) => setPersonaDraft({ ...personaDraft, systemPrompt: event.target.value })} /></label>
+            <button className="primary" type="submit" disabled={!canUsePersonas || personaSaving}>{personaSaving ? t('saving') : t('createPersona')}</button>
           </form>
         </section>
 
         <section className="panel" id="panel-api" role="tabpanel" aria-labelledby="tab-api" hidden={activeTab !== 'api'}>
-          <SectionTitle eyebrow="LOCAL API" title="OpenAI-compatible endpoints"><span className="badge">{state?.api.enabled ? 'enabled · authenticated' : 'disabled by default'}</span></SectionTitle>
+          <SectionTitle eyebrow={t('localApi')} title={t('openaiEndpoints')}><span className="badge">{state?.api.enabled ? t('apiEnabled') : t('apiDisabled')}</span></SectionTitle>
           <div className="endpoint-list"><article><span>GET</span><code>{baseUrl}/v1/models</code></article><article><span>POST</span><code>{baseUrl}/v1/chat/completions</code></article></div>
           <article className="card code-card">
-            <h3>Request example</h3>
-            <pre>{`curl -H "Content-Type: application/json" ${apiAuthorization}-d '{"model":"${modelId || 'your-model-alias'}","messages":[{"role":"user","content":"Hello"}]}' ${baseUrl}/v1/chat/completions`}</pre>
+            <h3>{t('requestExample')}</h3>
+            <pre>{`curl -H "Content-Type: application/json" ${apiAuthorization}-d '{"model":"${modelId || 'your-model-alias'}","messages":[{"role":"user","content":"${t('exampleHello')}"}]}' ${baseUrl}/v1/chat/completions`}</pre>
           </article>
-          <p className="hint">Set <code>MODELDECK_API_KEY</code> and restart Core to enable <code>/v1/*</code>; Bearer authentication is always required when it is enabled. Dashboard control uses separate ephemeral session protection.</p>
+          <p className="hint">{t('apiHintPrefix')} <code>MODELDECK_API_KEY</code> {t('apiHintSuffix')}</p>
         </section>
 
         <section className="panel" id="panel-roadmap" role="tabpanel" aria-labelledby="tab-roadmap" hidden={activeTab !== 'roadmap'}>
-          <SectionTitle eyebrow="CAPABILITY PACKS" title="Isolated platform roadmap" />
-          <p className="lead">Core stays small and portable. Hardware-heavy features are added only when their runtime, license and operating-system lifecycle can be tested independently.</p>
-          <div className="capability-grid">{state && Object.entries(state.capabilities.features).map(([name, feature]) => <article key={name}><span className={`state ${feature.state === 'available' ? 'ok' : feature.state === 'unavailable' ? 'off' : 'planned'}`}>{feature.state}</span><strong>{name}</strong><p>{feature.reason || 'Included in Core Preview.'}</p></article>)}</div>
+          <SectionTitle eyebrow={t('capabilityPacks')} title={t('isolatedRoadmap')} />
+          <p className="lead">{t('roadmapLead')}</p>
+          <div className="capability-grid">{state && Object.entries(state.capabilities.features).map(([name, feature]) => <article key={name}><span className={`state ${feature.state === 'available' ? 'ok' : feature.state === 'unavailable' ? 'off' : 'planned'}`}>{t(featureStateKeys[feature.state])}</span><strong>{featureNameKeys[name] ? t(featureNameKeys[name]) : name}</strong><p>{featureReason(name, feature)}</p></article>)}</div>
         </section>
       </div>
     </main>

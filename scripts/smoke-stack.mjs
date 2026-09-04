@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { DASHBOARD_ERROR_CODES } from '../controller/http/dashboard-errors.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dashboardToken = 'stack-dashboard-fixture';
@@ -95,6 +96,8 @@ try {
   const htmlResponse = await waitForDashboard(`${dashboardOrigin}/`, child, () => logs);
   const html = await htmlResponse.text();
   assert.match(html, /Model Deck Core/);
+  assert.match(html, /简体中文/);
+  assert.match(html, /\/_next\/static\/chunks\/app\/page-[a-f0-9]{16}\.js/);
   assert.equal(html.includes(managementToken), false);
   assert.equal(html.includes(dashboardToken), false);
   assert.match(logs, new RegExp(`#token=${dashboardToken}`));
@@ -113,8 +116,12 @@ try {
   assert.equal(disabledApi.status, 503);
 
   const proxyUrl = `${dashboardOrigin}/api/controller/api/state`;
-  assert.equal((await fetch(proxyUrl)).status, 401);
-  assert.equal((await fetch(proxyUrl, { headers: { 'X-ModelDeck-Dashboard-Token': 'wrong-fixture' } })).status, 401);
+  const missingSession = await fetch(proxyUrl);
+  assert.equal(missingSession.status, 401);
+  assert.equal((await missingSession.json()).error.code, DASHBOARD_ERROR_CODES.sessionInvalid);
+  const wrongSession = await fetch(proxyUrl, { headers: { 'X-ModelDeck-Dashboard-Token': 'wrong-fixture' } });
+  assert.equal(wrongSession.status, 401);
+  assert.equal((await wrongSession.json()).error.code, DASHBOARD_ERROR_CODES.sessionInvalid);
   const dashboardHeaders = { 'X-ModelDeck-Dashboard-Token': dashboardToken };
   const stateResponse = await fetch(proxyUrl, { headers: dashboardHeaders });
   assert.equal(stateResponse.status, 200);
@@ -127,6 +134,7 @@ try {
     body: JSON.stringify({ name: 'Rejected', systemPrompt: 'Must not be stored.' }),
   });
   assert.equal(rejectedOrigin.status, 403);
+  assert.equal((await rejectedOrigin.json()).error.code, DASHBOARD_ERROR_CODES.crossOriginWriteDenied);
 
   const writeHeaders = { ...dashboardHeaders, 'Content-Type': 'application/json', Origin: dashboardOrigin };
   const createdResponse = await fetch(`${dashboardOrigin}/api/controller/api/personas`, {
