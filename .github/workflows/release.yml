@@ -494,11 +494,68 @@ jobs:
           npm run check
           npm run build
           npm run smoke:stack
-      - name: Create GitHub prerelease
+      - name: Publish GitHub prerelease
         shell: bash
-        run: >-
-          gh release create "$GITHUB_REF_NAME" release/*
-          --verify-tag
-          --prerelease
-          --title "Model Deck Core $GITHUB_REF_NAME"
-          --generate-notes
+        run: |
+          test "$(git rev-list -n 1 "$GITHUB_REF_NAME")" = "$GITHUB_SHA"
+          release_json="$RUNNER_TEMP/github-release.json"
+          release_error="$RUNNER_TEMP/github-release.error"
+          release_status=1
+          for attempt in {1..4}; do
+            if gh release view "$GITHUB_REF_NAME" --json isDraft,isPrerelease,tagName > "$release_json" 2> "$release_error"; then
+              release_status=0
+              break
+            fi
+            if grep -qi 'release not found' "$release_error"; then
+              release_status=2
+              break
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              cat "$release_error" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+
+          case "$release_status" in
+            0)
+              node --input-type=module - "$release_json" "$GITHUB_REF_NAME" <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const [, , releasePath, expectedTag] = process.argv;
+          const release = JSON.parse(readFileSync(releasePath, 'utf8'));
+          assert.equal(release.tagName, expectedTag, 'Existing GitHub release uses a different tag.');
+          assert.equal(release.isPrerelease, true, 'Existing GitHub release is not a prerelease.');
+          assert.equal(release.isDraft, false, 'Existing GitHub release is still a draft.');
+          NODE
+              ;;
+            2)
+              gh release create "$GITHUB_REF_NAME" \
+                --verify-tag \
+                --prerelease \
+                --title "Model Deck Core $GITHUB_REF_NAME" \
+                --generate-notes
+              ;;
+            *)
+              exit "$release_status"
+              ;;
+          esac
+
+          gh release upload "$GITHUB_REF_NAME" release/* --clobber
+          gh release view "$GITHUB_REF_NAME" --json assets,isDraft,isPrerelease,tagName > "$release_json"
+          node --input-type=module - "$release_json" release "$GITHUB_REF_NAME" <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readdirSync, readFileSync, statSync } from 'node:fs';
+          import { join } from 'node:path';
+          const [, , releasePath, artifactDirectory, expectedTag] = process.argv;
+          const release = JSON.parse(readFileSync(releasePath, 'utf8'));
+          assert.equal(release.tagName, expectedTag);
+          assert.equal(release.isPrerelease, true);
+          assert.equal(release.isDraft, false);
+          const expected = readdirSync(artifactDirectory).map((name) => ({
+            name,
+            size: statSync(join(artifactDirectory, name)).size,
+          })).sort((a, b) => a.name.localeCompare(b.name));
+          const actual = release.assets.map(({ name, size }) => ({ name, size })).sort((a, b) => a.name.localeCompare(b.name));
+          assert.deepEqual(actual, expected, 'GitHub release assets differ from the verified local artifacts.');
+          NODE
