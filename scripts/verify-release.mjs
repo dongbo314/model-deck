@@ -11,28 +11,31 @@ const execFileAsync = promisify(execFile);
 const filesystemOnly = process.argv.includes('--filesystem-only');
 const excludedRoots = new Set(['.git', '.next', 'coverage', 'dist', 'node_modules', 'out', 'release']);
 const allowedRoots = new Set([
-  '.env.example', '.gitattributes', '.github', '.gitignore',
+  '.dockerignore', '.env.example', '.gitattributes', '.github', '.gitignore',
   'CHANGELOG.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'LICENSE',
-  'MODEL_LICENSES.md', 'NOTICE', 'README.md', 'SECURITY.md',
+  'Dockerfile', 'MODEL_LICENSES.md', 'NOTICE', 'README.md', 'README.zh-CN.md', 'SECURITY.md',
   'THIRD_PARTY_NOTICES.md', 'app', 'bin', 'controller', 'docs',
-  'eslint.config.mjs', 'next-env.d.ts', 'next.config.ts', 'package-lock.json',
+  'compose.yaml', 'eslint.config.mjs', 'next-env.d.ts', 'next.config.ts', 'package-lock.json',
   'package.json', 'packaging', 'resources', 'scripts', 'test', 'tsconfig.json',
 ]);
 const exactSourceFiles = new Set([
-  '.env.example', '.gitattributes', '.github/dependabot.yml',
+  '.dockerignore', '.env.example', '.gitattributes', '.github/dependabot.yml',
   '.github/workflows/ci.yml', '.github/workflows/release.yml', '.gitignore',
-  'CHANGELOG.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'LICENSE',
-  'MODEL_LICENSES.md', 'NOTICE', 'README.md', 'SECURITY.md',
+  'CHANGELOG.md', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'Dockerfile', 'LICENSE',
+  'MODEL_LICENSES.md', 'NOTICE', 'README.md', 'README.zh-CN.md', 'SECURITY.md',
   'THIRD_PARTY_NOTICES.md', 'eslint.config.mjs', 'next-env.d.ts',
-  'next.config.ts', 'package-lock.json', 'package.json',
+  'compose.yaml', 'next.config.ts', 'package-lock.json', 'package.json',
+  'packaging/docker/modeldeck.env.example',
   'packaging/windows/start-modeldeck.cmd', 'resources/personas.default.json',
   'resources/providers.example.json', 'tsconfig.json',
 ]);
 const forbiddenSegments = new Set(['cache', 'data', 'outputs', 'runtime', 'state', 'work']);
 const requiredFiles = [
-  '.github/workflows/ci.yml', '.github/workflows/release.yml', 'LICENSE',
-  'MODEL_LICENSES.md', 'NOTICE', 'README.md', 'SECURITY.md',
+  '.dockerignore', '.github/workflows/ci.yml', '.github/workflows/release.yml',
+  'Dockerfile', 'LICENSE', 'MODEL_LICENSES.md', 'NOTICE', 'README.md',
+  'README.zh-CN.md', 'SECURITY.md', 'compose.yaml',
   'THIRD_PARTY_NOTICES.md', 'package-lock.json', 'package.json',
+  'packaging/docker/modeldeck.env.example',
   'packaging/windows/start-modeldeck.cmd', 'scripts/create-release-artifacts.mjs',
   'scripts/verify-release-artifacts.mjs', 'scripts/verify-release.mjs',
 ];

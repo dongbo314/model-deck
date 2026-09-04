@@ -83,6 +83,12 @@ await writeFile(manifestPath, `${JSON.stringify({
   commit,
   distribution: 'source',
   supportedTargets: ['Windows 11 x64', 'Ubuntu 24.04 x64', 'macOS 14 arm64/x64'],
+  container: {
+    distribution: 'source-build',
+    imagePublished: false,
+    platform: 'linux/amd64',
+    hosts: ['Windows x64 with Docker Desktop', 'Linux x64 with Docker Engine'],
+  },
   files,
 }, null, 2)}\n`, 'utf8');
 

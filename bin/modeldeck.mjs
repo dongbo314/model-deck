@@ -10,6 +10,7 @@ import { parseArgs } from 'node:util';
 import { initializeCore } from '../controller/bootstrap.mjs';
 import { resolveCoreFiles } from '../controller/config/paths.mjs';
 import { runDoctor } from '../controller/doctor.mjs';
+import { assertListenHost, controllerTargetHost, isContainerMode } from '../controller/network-policy.mjs';
 import { sanitizedNextEnvironment } from '../scripts/run-next.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,8 +26,9 @@ Usage:
   modeldeck dev
   modeldeck start
 
-Core Preview binds only to loopback. Provider credentials are read from
-environment variables named by providers.json.`);
+Core Preview exposes services only on the host loopback interface. The supported
+Docker Compose profile uses an isolated container-only wildcard listener.
+Provider credentials are read from environment variables named by providers.json.`);
 }
 
 function childProcess(command, args, env) {
@@ -54,9 +56,7 @@ async function waitForExit(child, timeoutMs) {
 }
 
 function assertLoopback(host) {
-  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) {
-    throw new Error('Core Preview is loopback-only; services must bind to 127.0.0.1, localhost, or ::1.');
-  }
+  assertListenHost(host, { env: {} });
 }
 
 function normalizedPort(value, name) {
@@ -84,18 +84,20 @@ async function runStack(mode) {
     MODELDECK_DASHBOARD_PORT: normalizedPort(process.env.MODELDECK_DASHBOARD_PORT || '3000', 'MODELDECK_DASHBOARD_PORT'),
   };
   delete controllerEnv.MODELDECK_DASHBOARD_TOKEN;
-  assertLoopback(controllerEnv.MODELDECK_HOST);
-  assertLoopback(controllerEnv.MODELDECK_DASHBOARD_HOST);
+  assertListenHost(controllerEnv.MODELDECK_HOST, { env: controllerEnv });
+  assertListenHost(controllerEnv.MODELDECK_DASHBOARD_HOST, { env: controllerEnv });
+  const containerMode = isContainerMode(controllerEnv);
   const dashboardEnv = {
     ...sanitizedNextEnvironment(controllerEnv),
     MODELDECK_MANAGEMENT_TOKEN: managementToken,
     MODELDECK_DASHBOARD_TOKEN: dashboardToken,
-    MODELDECK_HOST: controllerEnv.MODELDECK_HOST,
+    MODELDECK_HOST: controllerTargetHost(controllerEnv.MODELDECK_HOST, { env: controllerEnv }),
     MODELDECK_PORT: controllerEnv.MODELDECK_PORT,
     MODELDECK_DASHBOARD_HOST: controllerEnv.MODELDECK_DASHBOARD_HOST,
     MODELDECK_DASHBOARD_PORT: controllerEnv.MODELDECK_DASHBOARD_PORT,
   };
-  const dashboardDisplayHost = dashboardEnv.MODELDECK_DASHBOARD_HOST === '::1' ? '[::1]' : dashboardEnv.MODELDECK_DASHBOARD_HOST;
+  const displayHost = containerMode ? '127.0.0.1' : dashboardEnv.MODELDECK_DASHBOARD_HOST;
+  const dashboardDisplayHost = displayHost === '::1' ? '[::1]' : displayHost;
   console.log(`Model Deck Core dashboard: http://${dashboardDisplayHost}:${dashboardEnv.MODELDECK_DASHBOARD_PORT}/#token=${encodeURIComponent(dashboardToken)}`);
   const nextCli = require.resolve('next/dist/bin/next');
   const controller = childProcess(process.execPath, [resolve(root, 'controller', 'main.mjs')], controllerEnv);

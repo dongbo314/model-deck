@@ -99,6 +99,14 @@ try {
   assert.equal(html.includes(dashboardToken), false);
   assert.match(logs, new RegExp(`#token=${dashboardToken}`));
 
+  const healthResponse = await fetch(`${dashboardOrigin}/api/health`);
+  assert.equal(healthResponse.status, 200);
+  assert.deepEqual(await healthResponse.json(), {
+    status: 'ok',
+    service: 'modeldeck-core-dashboard',
+    controller: 'ok',
+  });
+
   const direct = await fetch(`http://127.0.0.1:${controllerPort}/api/state`);
   assert.equal(direct.status, 401);
   const disabledApi = await fetch(`http://127.0.0.1:${controllerPort}/v1/models`);

@@ -24,7 +24,7 @@ All primary panels stay mounted while the user changes tabs, so an active chat r
 
 ## Controller
 
-The controller uses Node's built-in HTTP server and binds to loopback. Its responsibilities are:
+The controller uses Node's built-in HTTP server. Native launches bind directly to loopback. The supported Docker launcher may bind inside its isolated container while Compose publishes only to the host loopback; the Dashboard still connects to the controller over the container's loopback interface. Its responsibilities are:
 
 - validating provider metadata;
 - mapping public model aliases to upstream model identifiers;

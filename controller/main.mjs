@@ -3,17 +3,12 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { initializeCore } from './bootstrap.mjs';
 import { createCoreHttpServer } from './http/server.mjs';
+import { assertListenHost } from './network-policy.mjs';
 
 function parsePort(value, fallback) {
   const port = Number(value || fallback);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid port: ${value}`);
   return port;
-}
-
-function assertLoopback(host) {
-  if (!['127.0.0.1', 'localhost', '::1'].includes(host)) {
-    throw new Error('Core Preview is loopback-only. MODELDECK_HOST must be 127.0.0.1, localhost, or ::1.');
-  }
 }
 
 export async function startController({ env = process.env, host, port, fetchImpl = fetch, platform = process.platform, home } = {}) {
@@ -23,7 +18,7 @@ export async function startController({ env = process.env, host, port, fetchImpl
   };
   const listenHost = host || runtimeEnv.MODELDECK_HOST || '127.0.0.1';
   const listenPort = port ?? parsePort(runtimeEnv.MODELDECK_PORT, 8080);
-  assertLoopback(listenHost);
+  assertListenHost(listenHost, { env: runtimeEnv });
   const initialized = await initializeCore({ env: runtimeEnv, platform, home });
   const state = { ...initialized, instanceId: randomBytes(8).toString('hex') };
   const server = createCoreHttpServer({ state, env: runtimeEnv, fetchImpl, platform });

@@ -38,9 +38,86 @@ jobs:
       - run: npm run security:audit
       - run: npm run security:signatures
 
+  validate-container:
+    name: Validate Docker Compose / linux-amd64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DOCKER_BUILDKIT: "1"
+      MODELDECK_MANAGEMENT_TOKEN: modeldeck-release-management-fixture
+      MODELDECK_DASHBOARD_TOKEN: modeldeck-release-dashboard-fixture
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.13.0
+      - name: Verify tag matches package version
+        shell: bash
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Prepare ignored container environment
+        shell: bash
+        run: |
+          cp packaging/docker/modeldeck.env.example modeldeck.env
+          printf '\nMODELDECK_MANAGEMENT_TOKEN=%s\nMODELDECK_DASHBOARD_TOKEN=%s\n' "$MODELDECK_MANAGEMENT_TOKEN" "$MODELDECK_DASHBOARD_TOKEN" >> modeldeck.env
+          chmod 600 modeldeck.env
+      - name: Validate Compose model
+        run: docker compose config --quiet
+      - name: Build source image
+        run: docker compose build --pull
+      - name: Verify image runtime identity and health check
+        shell: bash
+        run: |
+          test "$(docker image inspect model-deck-core:local --format '{{.Config.User}}')" = "node"
+          test "$(docker image inspect model-deck-core:local --format '{{json .Config.Healthcheck.Test}}')" != "null"
+      - name: Start hardened container
+        run: docker compose up --detach --wait --wait-timeout 120
+      - name: Verify hardening and host-loopback publications
+        shell: bash
+        run: |
+          container_id="$(docker compose ps --quiet model-deck)"
+          test -n "$container_id"
+          test "$(docker inspect "$container_id" --format '{{.Config.User}}')" = "node"
+          test "$(docker inspect "$container_id" --format '{{.HostConfig.ReadonlyRootfs}}')" = "true"
+          test "$(docker inspect "$container_id" --format '{{json .HostConfig.CapDrop}}')" = '["ALL"]'
+          test "$(docker inspect "$container_id" --format '{{json .HostConfig.SecurityOpt}}')" = '["no-new-privileges:true"]'
+          test "$(docker inspect "$container_id" --format '{{.HostConfig.PidsLimit}}')" = "128"
+          test -n "$(docker inspect "$container_id" --format '{{index .HostConfig.Tmpfs "/tmp"}}')"
+          test -n "$(docker inspect "$container_id" --format '{{index .HostConfig.Tmpfs "/app/.next/cache"}}')"
+          test "$(docker inspect "$container_id" --format '{{range .Mounts}}{{if eq .Destination "/var/lib/modeldeck"}}{{.Type}}{{end}}{{end}}')" = "volume"
+          test "$(docker inspect "$container_id" --format '{{(index (index .NetworkSettings.Ports "3000/tcp") 0).HostIp}}')" = "127.0.0.1"
+          test "$(docker inspect "$container_id" --format '{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostIp}}')" = "127.0.0.1"
+          test "$(docker compose exec -T model-deck id -u)" != "0"
+      - name: Exercise container stack
+        run: npm run smoke:container -- create
+      - name: Recreate container while preserving its volume
+        shell: bash
+        run: |
+          docker compose rm --stop --force model-deck
+          docker compose up --detach --wait --wait-timeout 120
+      - name: Verify cross-container named-volume persistence
+        run: npm run smoke:container -- verify
+      - name: Verify graceful stop
+        shell: bash
+        run: |
+          container_id="$(docker compose ps --quiet model-deck)"
+          docker compose stop --timeout 15 model-deck
+          test "$(docker inspect "$container_id" --format '{{.State.Running}}')" = "false"
+          test "$(docker inspect "$container_id" --format '{{.State.ExitCode}}')" = "0"
+          test "$(docker inspect "$container_id" --format '{{.State.OOMKilled}}')" = "false"
+      - name: Show container logs
+        if: always()
+        continue-on-error: true
+        run: docker compose logs --no-color model-deck
+      - name: Remove test container and volume
+        if: always()
+        continue-on-error: true
+        run: docker compose down --volumes --remove-orphans
+
   publish-source:
     name: Publish source preview
-    needs: validate-core
+    needs: [validate-core, validate-container]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:

@@ -1,8 +1,10 @@
 # Model Deck Core
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Model Deck Core is a local, cross-platform control plane for OpenAI-compatible model providers and reusable personas. It gives Windows, Linux and macOS users one dashboard and one local API without bundling model weights, private credentials or hardware-specific runtimes.
 
-> **Status:** `0.1.0-alpha.3` Core Preview. The remote-provider path is implemented and covered by cross-platform CI. Local inference and media capability packs are roadmap items, not completed features.
+> **Status:** `0.1.0-alpha.4` Core Preview. The remote-provider path and a source-built Docker Compose deployment are implemented and covered by CI. Local inference and media capability packs are roadmap items, not completed features.
 
 ## Editions
 
@@ -16,7 +18,8 @@ The existing macOS Full installation is maintained separately. This repository w
 
 ## Security defaults
 
-- Controller and dashboard bind to loopback only.
+- Native controller and Dashboard processes bind to loopback only.
+- The supported Docker profile uses wildcard listeners only inside its container and publishes both host ports explicitly on `127.0.0.1`.
 - LAN access is not included in Core Preview.
 - The supported launcher creates separate ephemeral controller and browser-session tokens.
 - The `/v1/*` local API is disabled until `MODELDECK_API_KEY` is set, then always requires that Bearer token.
@@ -25,14 +28,14 @@ The existing macOS Full installation is maintained separately. This repository w
 - Supported build/start scripts disable framework telemetry; Core performs no application telemetry or automatic model downloads.
 - Remote provider URLs must use HTTPS. HTTP is accepted only for loopback development providers.
 
-Do not expose ports 3000 or 8080 through a router, public reverse proxy or container publish rule. See [SECURITY.md](SECURITY.md) before reporting a vulnerability.
+Do not expose ports 3000 or 8080 to a LAN or the public Internet through a router, reverse proxy or non-loopback container publish rule. See [SECURITY.md](SECURITY.md) before reporting a vulnerability.
 
 ## Requirements
 
-- Node.js 22.13 or newer
-- npm 10 or newer
 - Windows x64, Linux x64, or macOS arm64/x64
 - At least one OpenAI-compatible provider for chat
+
+For a source installation, use Node.js 22.13 or newer and npm 10 or newer. As an alternative, use Docker Desktop with Engine 28.0 or newer on Windows x64, or Docker Engine 28.3.3 or newer on Linux x64, together with Docker Compose v2; the preview container runs as `linux/amd64`.
 
 Windows ARM64 may run through an x64 Node installation, but it is not a first-release validation target.
 
@@ -66,6 +69,33 @@ Open the secure Dashboard URL printed by `npm start`; its fragment carries a one
 Windows PowerShell and Linux-specific notes are in [docs/windows.md](docs/windows.md) and [docs/linux.md](docs/linux.md).
 
 GitHub release ZIP/tar.gz files are source distributions, not prebuilt installers. Extract one archive, then run the same `npm ci && npm run build` steps on the target system. Each release includes a file manifest and `SHA256SUMS`; see [docs/release-process.md](docs/release-process.md).
+
+## Docker Compose preview
+
+The Docker profile builds the image locally from this repository. On Linux or macOS, copy the ignored environment template with owner-only permissions, add only the provider credentials referenced by your provider configuration, then start the service. Every Windows setup, including Git Bash and WSL working on Windows files, should use the PowerShell and NTFS ACL instructions in the full Docker guide.
+
+```bash
+cp packaging/docker/modeldeck.env.example modeldeck.env
+chmod 600 modeldeck.env
+docker compose up --build -d
+docker compose logs --tail=50 model-deck
+```
+
+Open the last `Model Deck Core dashboard:` URL from the logs. Treat that URL and the logs containing it as sensitive.
+
+The first start creates an empty provider configuration in the named volume. Copy it out, edit it using [resources/providers.example.json](resources/providers.example.json) as a reference, copy it back, and restart:
+
+```bash
+docker compose cp model-deck:/var/lib/modeldeck/config/providers.json ./providers.json
+# Edit providers.json without adding credentials.
+docker compose cp ./providers.json model-deck:/var/lib/modeldeck/config/providers.json
+docker compose restart model-deck
+docker compose logs --tail=50 model-deck
+```
+
+Ports 3000 and 8080 are published only on host `127.0.0.1`. Do not replace those mappings with unqualified `3000:3000` or `8080:8080`. If the local API is not needed, remove the 8080 mapping. This first container preview supports remote HTTPS providers; host-local HTTP runtimes such as `host.docker.internal` are not yet a supported provider target.
+
+See the [Docker guide](docs/docker.md) for data backup, upgrades, shutdown and troubleshooting. A [Chinese Docker guide](docs/docker.zh-CN.md) is also available.
 
 ## Provider configuration
 
@@ -173,8 +203,9 @@ A passing source build does not prove a packaged application works. Core release
 3. Remote model routing through a fake provider.
 4. A secret and personal-path scan.
 5. An archive manifest and checksum.
+6. A source-built, non-root Docker Compose smoke test on hosted Linux, including health, loopback publishing and volume persistence checks.
 
-The initial GitHub tag is a source-only developer preview. Signed Windows installers and packaged Linux services are future release gates. npm tarballs are not a supported distribution format.
+GitHub assets remain source-only developer previews. Docker Compose builds an image locally from that source; no prebuilt container image is published in this release. Signed Windows installers and packaged Linux services are future release gates. npm tarballs are not a supported distribution format.
 
 ## License
 

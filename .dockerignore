@@ -1,0 +1,17 @@
+**
+!package.json
+!package-lock.json
+!next.config.ts
+!next-env.d.ts
+!tsconfig.json
+!app/
+!app/**
+!bin/
+!bin/**
+!controller/
+!controller/**
+!resources/
+!resources/**
+!scripts/
+!scripts/run-next.mjs
+!scripts/container-healthcheck.mjs

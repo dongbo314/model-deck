@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.0-alpha.4
+
+- Added a complete Simplified Chinese README and Chinese Docker deployment guide.
+- Added a source-built, non-root Docker Compose preview for Windows and Linux x64 hosts.
+- Kept native launches loopback-only while permitting verified container-only wildcard listeners behind explicit host-loopback port mappings.
+- Added end-to-end container health, authorization, hardening and named-volume persistence checks to CI and release gates.
+
 ## 0.1.0-alpha.3
 
 - Generated the release manifest through Git export filters, including the CRLF Windows launcher produced by Git attributes.

@@ -1,0 +1,35 @@
+services:
+  model-deck:
+    build:
+      context: .
+    image: model-deck-core:local
+    platform: linux/amd64
+    init: true
+    restart: unless-stopped
+    env_file:
+      - ./modeldeck.env
+    environment:
+      MODELDECK_CONTAINER_MODE: "1"
+      MODELDECK_HOME: /var/lib/modeldeck
+      MODELDECK_HOST: 0.0.0.0
+      MODELDECK_PORT: "8080"
+      MODELDECK_DASHBOARD_HOST: 0.0.0.0
+      MODELDECK_DASHBOARD_PORT: "3000"
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - modeldeck-data:/var/lib/modeldeck
+    read_only: true
+    tmpfs:
+      - "/tmp:size=64m,mode=1777"
+      - "/app/.next/cache:size=64m,uid=1000,gid=1000,mode=0700"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    stop_grace_period: 15s
+
+volumes:
+  modeldeck-data:

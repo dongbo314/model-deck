@@ -5,6 +5,7 @@
 /dist/
 /coverage/
 /release/
+/modeldeck.env
 *.tsbuildinfo
 
 # local configuration and all mutable state

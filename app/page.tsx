@@ -320,7 +320,7 @@ export default function Home() {
     ? 'Connecting'
     : connectionStatus === 'offline'
       ? 'Controller offline'
-      : state?.capabilities.network.loopbackOnly ? 'Loopback connected' : 'Connected';
+      : state?.capabilities.network.loopbackOnly ? 'Local connection' : 'Connected';
   const apiAuthorization = state?.api.enabled ? '-H "Authorization: Bearer $MODELDECK_API_KEY" ' : '';
 
   return (
@@ -370,7 +370,7 @@ export default function Home() {
           <div className="two-column">
             <article className="card">
               <SectionTitle eyebrow="SECURITY" title="Local by default" />
-              <p>{state?.capabilities.network.loopbackOnly ? 'Core Preview listens on loopback only.' : 'Review the active network configuration before use.'} It does not download models or enable application telemetry.</p>
+              <p>{state?.capabilities.network.loopbackOnly ? 'The supported launch configuration exposes Core Preview on the host loopback only.' : 'Review the active network configuration before use.'} It does not download models or enable application telemetry.</p>
               <dl className="facts"><div><dt>LAN control</dt><dd>{state?.capabilities.network.lanControl ? 'Enabled' : 'Disabled'}</dd></div><div><dt>Secrets</dt><dd>Environment variables</dd></div><div><dt>User data</dt><dd>Outside the installation directory</dd></div></dl>
             </article>
             <article className="card">
