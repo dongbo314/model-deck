@@ -2,7 +2,8 @@
 
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -32,13 +33,20 @@ const archivePrefix = `${baseName}/`;
 const zipPath = join(releaseDirectory, `${baseName}-source.zip`);
 const tarPath = join(releaseDirectory, `${baseName}-source.tar.gz`);
 const manifestPath = join(releaseDirectory, `${baseName}-manifest.json`);
+const archiveEnvironment = { ...process.env, TZ: 'UTC' };
 
 await rm(releaseDirectory, { recursive: true, force: true });
 await mkdir(releaseDirectory, { recursive: true });
 
 await Promise.all([
-  execFileAsync('git', ['archive', '--format=zip', `--prefix=${archivePrefix}`, '-o', zipPath, 'HEAD'], { cwd: repositoryRoot }),
-  execFileAsync('git', ['archive', '--format=tar.gz', `--prefix=${archivePrefix}`, '-o', tarPath, 'HEAD'], { cwd: repositoryRoot }),
+  execFileAsync('git', ['archive', '--format=zip', `--prefix=${archivePrefix}`, '-o', zipPath, 'HEAD'], {
+    cwd: repositoryRoot,
+    env: archiveEnvironment,
+  }),
+  execFileAsync('git', ['archive', '--format=tar.gz', `--prefix=${archivePrefix}`, '-o', tarPath, 'HEAD'], {
+    cwd: repositoryRoot,
+    env: archiveEnvironment,
+  }),
 ]);
 
 const { stdout: fileOutput } = await execFileAsync('git', ['ls-files', '-z'], {
@@ -48,17 +56,20 @@ const { stdout: fileOutput } = await execFileAsync('git', ['ls-files', '-z'], {
 });
 const paths = fileOutput.toString('utf8').split('\0').filter(Boolean).sort();
 const files = [];
-for (const path of paths) {
-  const { stdout } = await execFileAsync('git', ['show', `HEAD:${path}`], {
-    cwd: repositoryRoot,
-    encoding: 'buffer',
-    maxBuffer: 16 * 1024 * 1024,
-  });
-  files.push({
-    path,
-    bytes: stdout.length,
-    sha256: createHash('sha256').update(stdout).digest('hex'),
-  });
+const extractionDirectory = await mkdtemp(join(tmpdir(), 'model-deck-release-manifest-'));
+try {
+  await execFileAsync('tar', ['-xzf', tarPath, '-C', extractionDirectory]);
+  const archiveRoot = join(extractionDirectory, baseName);
+  for (const path of paths) {
+    const bytes = await readFile(join(archiveRoot, ...path.split('/')));
+    files.push({
+      path,
+      bytes: bytes.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+    });
+  }
+} finally {
+  await rm(extractionDirectory, { recursive: true, force: true });
 }
 
 await writeFile(manifestPath, `${JSON.stringify({

@@ -59,6 +59,7 @@ jobs:
       - run: npm ci
       - run: npm run release:verify
       - run: npm run release:artifacts
+      - run: npm run release:artifacts:verify
       - name: Verify source archive
         shell: bash
         run: |

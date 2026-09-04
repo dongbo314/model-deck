@@ -34,7 +34,7 @@ const requiredFiles = [
   'MODEL_LICENSES.md', 'NOTICE', 'README.md', 'SECURITY.md',
   'THIRD_PARTY_NOTICES.md', 'package-lock.json', 'package.json',
   'packaging/windows/start-modeldeck.cmd', 'scripts/create-release-artifacts.mjs',
-  'scripts/verify-release.mjs',
+  'scripts/verify-release-artifacts.mjs', 'scripts/verify-release.mjs',
 ];
 const forbiddenSuffixes = [
   '.7z', '.appimage', '.bin', '.ckpt', '.crt', '.db', '.deb', '.dll', '.dmg',

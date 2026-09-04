@@ -1,6 +1,6 @@
 {
   "name": "model-deck-core",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "private": true,
   "description": "Cross-platform local control plane for OpenAI-compatible models and personas.",
   "license": "Apache-2.0",
@@ -35,6 +35,7 @@
     "release:verify": "node scripts/verify-release.mjs",
     "release:verify:filesystem": "node scripts/verify-release.mjs --filesystem-only",
     "release:artifacts": "node scripts/create-release-artifacts.mjs",
+    "release:artifacts:verify": "node scripts/verify-release-artifacts.mjs",
     "security:audit": "npm audit --audit-level=high",
     "security:signatures": "npm audit signatures",
     "security:production": "npm audit --omit=dev --audit-level=high"
