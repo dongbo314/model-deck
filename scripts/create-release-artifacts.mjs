@@ -2,8 +2,7 @@
 
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -13,6 +12,10 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDirectory = join(repositoryRoot, 'release');
 const packageDocument = JSON.parse(await readFile(join(repositoryRoot, 'package.json'), 'utf8'));
 const version = packageDocument.version;
+const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+if (typeof version !== 'string' || version.length > 64 || !semverPattern.test(version)) {
+  throw new Error('package.json version must be a safe SemVer value.');
+}
 const expectedTag = `v${version}`;
 const requestedTag = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : null;
 
@@ -56,20 +59,19 @@ const { stdout: fileOutput } = await execFileAsync('git', ['ls-files', '-z'], {
 });
 const paths = fileOutput.toString('utf8').split('\0').filter(Boolean).sort();
 const files = [];
-const extractionDirectory = await mkdtemp(join(tmpdir(), 'model-deck-release-manifest-'));
-try {
-  await execFileAsync('tar', ['-xzf', tarPath, '-C', extractionDirectory]);
-  const archiveRoot = join(extractionDirectory, baseName);
-  for (const path of paths) {
-    const bytes = await readFile(join(archiveRoot, ...path.split('/')));
-    files.push({
-      path,
-      bytes: bytes.length,
-      sha256: createHash('sha256').update(bytes).digest('hex'),
-    });
-  }
-} finally {
-  await rm(extractionDirectory, { recursive: true, force: true });
+for (const path of paths) {
+  const { stdout: bytes } = await execFileAsync('git', [
+    'cat-file', '--filters', `--path=${path}`, `HEAD:${path}`,
+  ], {
+    cwd: repositoryRoot,
+    encoding: 'buffer',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  files.push({
+    path,
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  });
 }
 
 await writeFile(manifestPath, `${JSON.stringify({

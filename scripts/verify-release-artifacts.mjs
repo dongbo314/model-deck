@@ -2,9 +2,9 @@
 
 import { createHash } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -13,14 +13,24 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const releaseDirectory = join(repositoryRoot, 'release');
 const packageDocument = JSON.parse(await readFile(join(repositoryRoot, 'package.json'), 'utf8'));
 const version = packageDocument.version;
+const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+if (typeof version !== 'string' || version.length > 64 || !semverPattern.test(version)) {
+  throw new Error('package.json version must be a safe SemVer value.');
+}
+
 const tag = `v${version}`;
+const requestedTag = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : null;
+if (requestedTag && requestedTag !== tag) {
+  throw new Error(`Release tag ${requestedTag} does not match package version ${tag}.`);
+}
+
 const baseName = `model-deck-core-v${version}`;
-const archivePrefix = `${baseName}/`;
 const artifactNames = [
   `${baseName}-manifest.json`,
   `${baseName}-source.tar.gz`,
   `${baseName}-source.zip`,
 ].sort();
+const archiveEnvironment = { ...process.env, TZ: 'UTC' };
 
 function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
@@ -30,42 +40,41 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-function validateArchiveEntries(output, label) {
-  const entries = output.split(/\r?\n/).filter(Boolean);
-  assert(entries.length > 0, `${label} has no entries.`);
-  for (const entry of entries) {
-    const normalized = entry.replaceAll('\\', '/');
-    assert(normalized === archivePrefix || normalized.startsWith(archivePrefix), `${label} contains a path outside ${archivePrefix}: ${entry}`);
-    const childPath = normalized.slice(archivePrefix.length);
-    assert(!childPath.startsWith('/') && !childPath.split('/').includes('..'), `${label} contains an unsafe path: ${entry}`);
+function validatePortablePath(path) {
+  assert(typeof path === 'string' && path.length > 0, 'Release manifest contains an invalid path.');
+  assert(!path.startsWith('/') && !path.includes('\\'), `Release path must be a relative POSIX path: ${path}`);
+  const segments = path.split('/');
+  assert(segments.every((segment) => segment && segment !== '.' && segment !== '..'), `Release path contains an unsafe segment: ${path}`);
+  for (const segment of segments) {
+    assert(!/[<>:"|?*\u0000-\u001f\u007f]/.test(segment), `Release path is not Windows portable: ${path}`);
+    assert(!/[ .]$/.test(segment), `Release path has a Windows-unsafe suffix: ${path}`);
+    const stem = segment.split('.')[0].toUpperCase();
+    assert(!/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/.test(stem), `Release path uses a Windows-reserved name: ${path}`);
   }
 }
 
-async function listFiles(root, directory = root) {
-  const paths = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const absolute = join(directory, entry.name);
-    const details = await lstat(absolute);
-    assert(!details.isSymbolicLink(), `Extracted archive contains a symbolic link: ${relative(root, absolute)}`);
-    if (entry.isDirectory()) paths.push(...await listFiles(root, absolute));
-    else {
-      assert(entry.isFile(), `Extracted archive contains a non-file entry: ${relative(root, absolute)}`);
-      paths.push(relative(root, absolute).split(sep).join('/'));
-    }
-  }
-  return paths.sort();
-}
+const { stdout: statusOutput } = await execFileAsync('git', ['status', '--porcelain', '--untracked-files=no'], {
+  cwd: repositoryRoot,
+  encoding: 'utf8',
+});
+assert(!statusOutput.trim(), 'Tracked files must be clean before release artifacts are verified.');
 
-async function verifyExtractedArchive(root, manifestFiles, label) {
-  const actualPaths = await listFiles(root);
-  const expectedPaths = manifestFiles.map((file) => file.path);
-  assert(JSON.stringify(actualPaths) === JSON.stringify(expectedPaths), `${label} file list does not match the release manifest.`);
-
-  for (const file of manifestFiles) {
-    const bytes = await readFile(join(root, ...file.path.split('/')));
-    assert(bytes.length === file.bytes, `${label}:${file.path} byte count does not match the release manifest.`);
-    assert(sha256(bytes) === file.sha256, `${label}:${file.path} SHA-256 does not match the release manifest.`);
-  }
+const [{ stdout: commitOutput }, { stdout: fileOutput }] = await Promise.all([
+  execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' }),
+  execFileAsync('git', ['ls-files', '-z'], {
+    cwd: repositoryRoot,
+    encoding: 'buffer',
+    maxBuffer: 16 * 1024 * 1024,
+  }),
+]);
+const commit = commitOutput.trim();
+const gitPaths = fileOutput.toString('utf8').split('\0').filter(Boolean).sort();
+const caseFoldedPaths = new Map();
+for (const path of gitPaths) {
+  validatePortablePath(path);
+  const folded = path.toLowerCase();
+  assert(!caseFoldedPaths.has(folded), `Release paths collide on case-insensitive filesystems: ${caseFoldedPaths.get(folded)} and ${path}`);
+  caseFoldedPaths.set(folded, path);
 }
 
 const checksumText = await readFile(join(releaseDirectory, 'SHA256SUMS'), 'utf8');
@@ -83,9 +92,10 @@ for (const name of artifactNames) {
 }
 
 const manifest = JSON.parse(await readFile(join(releaseDirectory, `${baseName}-manifest.json`), 'utf8'));
-const { stdout: commitOutput } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: repositoryRoot, encoding: 'utf8' });
-const commit = commitOutput.trim();
 assert(manifest.schemaVersion === 1, 'Unsupported release manifest schema.');
+assert(manifest.product === 'Model Deck Core', 'Release manifest product is invalid.');
+assert(manifest.maturity === 'preview', 'Release manifest maturity is invalid.');
+assert(manifest.distribution === 'source', 'Release manifest distribution is invalid.');
 assert(manifest.version === version, 'Release manifest version does not match package.json.');
 assert(manifest.tag === tag, 'Release manifest tag does not match package.json.');
 assert(manifest.commit === commit, 'Release manifest commit does not match HEAD.');
@@ -93,39 +103,46 @@ assert(Array.isArray(manifest.files) && manifest.files.length > 0, 'Release mani
 
 const manifestPaths = manifest.files.map((file) => file.path);
 assert(new Set(manifestPaths).size === manifestPaths.length, 'Release manifest contains duplicate paths.');
-assert(JSON.stringify(manifestPaths) === JSON.stringify([...manifestPaths].sort()), 'Release manifest paths are not sorted.');
+assert(JSON.stringify(manifestPaths) === JSON.stringify(gitPaths), 'Release manifest file list does not match the tagged Git tree.');
 for (const file of manifest.files) {
-  assert(typeof file.path === 'string' && file.path.length > 0, 'Release manifest contains an invalid path.');
-  assert(!file.path.startsWith('/') && !file.path.split('/').includes('..'), `Release manifest contains an unsafe path: ${file.path}`);
+  validatePortablePath(file.path);
   assert(Number.isSafeInteger(file.bytes) && file.bytes >= 0, `Release manifest contains an invalid byte count: ${file.path}`);
   assert(/^[0-9a-f]{64}$/.test(file.sha256), `Release manifest contains an invalid SHA-256: ${file.path}`);
+  const { stdout: expectedBytes } = await execFileAsync('git', [
+    'cat-file', '--filters', `--path=${file.path}`, `HEAD:${file.path}`,
+  ], {
+    cwd: repositoryRoot,
+    encoding: 'buffer',
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  assert(expectedBytes.length === file.bytes, `${file.path} byte count is not derived from the tagged Git tree.`);
+  assert(sha256(expectedBytes) === file.sha256, `${file.path} SHA-256 is not derived from the tagged Git tree.`);
 }
 
-const tarPath = join(releaseDirectory, `${baseName}-source.tar.gz`);
-const zipPath = join(releaseDirectory, `${baseName}-source.zip`);
-const [{ stdout: tarEntries }, { stdout: zipEntries }] = await Promise.all([
-  execFileAsync('tar', ['-tzf', tarPath], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }),
-  execFileAsync('unzip', ['-Z1', zipPath], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }),
-]);
-validateArchiveEntries(tarEntries, basename(tarPath));
-validateArchiveEntries(zipEntries, basename(zipPath));
-
-const extractionDirectory = await mkdtemp(join(tmpdir(), 'model-deck-release-verify-'));
+const expectedDirectory = await mkdtemp(join(tmpdir(), 'model-deck-release-expected-'));
 try {
-  const tarDirectory = join(extractionDirectory, 'tar');
-  const zipDirectory = join(extractionDirectory, 'zip');
+  const expectedZipPath = join(expectedDirectory, `${baseName}-source.zip`);
+  const expectedTarPath = join(expectedDirectory, `${baseName}-source.tar.gz`);
   await Promise.all([
-    mkdir(tarDirectory),
-    mkdir(zipDirectory),
+    execFileAsync('git', ['archive', '--format=zip', `--prefix=${baseName}/`, '-o', expectedZipPath, 'HEAD'], {
+      cwd: repositoryRoot,
+      env: archiveEnvironment,
+    }),
+    execFileAsync('git', ['archive', '--format=tar.gz', `--prefix=${baseName}/`, '-o', expectedTarPath, 'HEAD'], {
+      cwd: repositoryRoot,
+      env: archiveEnvironment,
+    }),
   ]);
-  await Promise.all([
-    execFileAsync('tar', ['-xzf', tarPath, '-C', tarDirectory]),
-    execFileAsync('unzip', ['-q', zipPath, '-d', zipDirectory]),
-  ]);
-  await verifyExtractedArchive(join(tarDirectory, baseName), manifest.files, 'tar.gz');
-  await verifyExtractedArchive(join(zipDirectory, baseName), manifest.files, 'ZIP');
+  for (const expectedPath of [expectedTarPath, expectedZipPath]) {
+    const name = expectedPath.endsWith('.zip') ? `${baseName}-source.zip` : `${baseName}-source.tar.gz`;
+    const [actualBytes, expectedBytes] = await Promise.all([
+      readFile(join(releaseDirectory, name)),
+      readFile(expectedPath),
+    ]);
+    assert(actualBytes.equals(expectedBytes), `${name} is not the reproducible archive of the tagged Git tree.`);
+  }
 } finally {
-  await rm(extractionDirectory, { recursive: true, force: true });
+  await rm(expectedDirectory, { recursive: true, force: true });
 }
 
-console.log(`Release artifacts verified: ${manifest.files.length} files match the manifest in ZIP and tar.gz.`);
+console.log(`Release artifacts verified: ${manifest.files.length} exported files and both archives are bound to ${commit}.`);

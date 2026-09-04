@@ -2,8 +2,8 @@
 
 ## 0.1.0-alpha.3
 
-- Generated the release manifest from exported archive bytes, including the CRLF Windows launcher produced by Git attributes.
-- Added per-file verification of both ZIP and tar.gz archives against the manifest before publication.
+- Generated the release manifest through Git export filters, including the CRLF Windows launcher produced by Git attributes.
+- Added verification that the manifest and byte-for-byte reproducible ZIP and tar.gz archives all derive from the tagged Git tree.
 - Normalized ZIP timestamp metadata to UTC so the source archive is reproducible across time zones.
 
 ## 0.1.0-alpha.2
