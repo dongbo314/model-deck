@@ -2,7 +2,7 @@
 
 ## Supported target
 
-Linux x64 with Node.js 22.13 or newer. The first local-inference target will be Linux x64 with NVIDIA CUDA, but Core Preview itself requires no GPU.
+Linux x64 or arm64 with Node.js 22.13 or newer. The first local-inference target will be Linux x64 with NVIDIA CUDA, but Core Preview itself requires no GPU. The published Docker image provides native `linux/amd64` and `linux/arm64` variants.
 
 ## Setup
 

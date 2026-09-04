@@ -4,7 +4,7 @@
 
 Model Deck Core is a local, cross-platform control plane for OpenAI-compatible model providers and reusable personas. It gives Windows, Linux and macOS users one dashboard and one local API without bundling model weights, private credentials or hardware-specific runtimes.
 
-> **Status:** `0.1.0-alpha.5` Core Preview. The remote-provider path and a published Docker Compose deployment are implemented and covered by CI. The first Docker Hub image supports `linux/amd64`; local inference and media capability packs remain roadmap items, not completed features.
+> **Status:** `0.1.0-alpha.6` Core Preview. The remote-provider path, bilingual Dashboard and published Docker Compose deployment are implemented and covered by CI. The Docker Hub image supports native `linux/amd64` and `linux/arm64`; local inference and media capability packs remain roadmap items, not completed features.
 
 ## Editions
 
@@ -32,10 +32,10 @@ Do not expose ports 3000 or 8080 to a LAN or the public Internet through a route
 
 ## Requirements
 
-- Windows x64, Linux x64, or macOS arm64/x64
+- Windows x64, Linux x64/arm64, or macOS arm64/x64
 - At least one OpenAI-compatible provider for chat
 
-For a source installation, use Node.js 22.13 or newer and npm 10 or newer. As an alternative, use Docker Desktop with Engine 28.0 or newer on Windows x64, or Docker Engine 28.3.3 or newer on Linux x64, together with Docker Compose v2; the preview container runs as `linux/amd64`.
+For a source installation, use Node.js 22.13 or newer and npm 10 or newer. As an alternative, use Docker Desktop with Engine 28.0 or newer on Windows x64, or Docker Engine 28.3.3 or newer on Linux x64/arm64, together with Docker Compose v2. Compose selects the matching published architecture automatically.
 
 Windows ARM64 may run through an x64 Node installation, but it is not a first-release validation target.
 
@@ -66,7 +66,7 @@ npm start
 
 Open the secure Dashboard URL printed by `npm start`; its fragment carries a one-session token and is removed from the address bar after loading. The optional OpenAI-compatible API uses <http://127.0.0.1:8080/v1> after you explicitly enable it.
 
-The current source checkout starts the Dashboard in Simplified Chinese and provides a persistent Chinese/English selector in the header. If it reports that a secure session is required, the controller is not automatically considered offline: reopen the latest complete startup URL, because a service restart invalidates the previous browser-session token. These changes are listed under `Unreleased` until the next image tag is published.
+The Dashboard starts in Simplified Chinese and provides a persistent Chinese/English selector in the header. Its Noto Sans SC web font is self-hosted, so Linux browsers do not need a system CJK font or an external font service. If the Dashboard reports that a secure session is required, the controller is not automatically considered offline: reopen the latest complete startup URL, because a service restart invalidates the previous browser-session token.
 
 Windows PowerShell and Linux-specific notes are in [docs/windows.md](docs/windows.md) and [docs/linux.md](docs/linux.md).
 
@@ -84,7 +84,7 @@ docker compose up -d
 docker compose logs --tail=50 model-deck
 ```
 
-The release-specific tag is `0.1.0-alpha.5`; the moving `alpha` tag follows the newest preview. A `latest` tag is deliberately not published. The first published image supports only `linux/amd64`. To build from the checked-out source instead, use `docker compose up --build -d`.
+The release-specific tag is `0.1.0-alpha.6`; the moving `alpha` tag follows the newest preview. A `latest` tag is deliberately not published. The image index contains native `linux/amd64` and `linux/arm64` variants, and Compose chooses the host architecture automatically. To build from the checked-out source instead, use `docker compose up --build -d`.
 
 Open the last `Model Deck Core dashboard:` URL from the logs. Treat that URL and the logs containing it as sensitive.
 
@@ -203,13 +203,13 @@ Architecture and extension boundaries are documented in [docs/architecture.md](d
 
 A passing source build does not prove a packaged application works. Core releases require:
 
-1. Linux, Windows and macOS CI checks.
-2. Full controller and Dashboard smoke tests on all three hosted operating systems.
+1. Linux x64/arm64, Windows and macOS CI checks.
+2. Full controller and Dashboard smoke tests on every hosted target.
 3. Remote model routing through a fake provider.
 4. A secret and personal-path scan.
 5. An archive manifest and checksum.
-6. A source-built, non-root Docker Compose smoke test on hosted Linux, including health, loopback publishing and volume persistence checks.
-7. Publication of the `linux/amd64` image with BuildKit provenance and an SBOM, followed by a pull and runtime revalidation using the immutable image digest rather than a mutable tag.
+6. Source-built, non-root Docker Compose smoke tests on native hosted Linux x64 and arm64 runners, including health, loopback publishing and volume persistence checks.
+7. Publication and native runtime revalidation of immutable `linux/amd64` and `linux/arm64` artifacts with BuildKit provenance and SBOMs before they are merged into the release index.
 
 GitHub assets remain source-only developer previews, while Docker Hub provides the prebuilt Core container image. Provenance and the SBOM improve traceability, but the SBOM is an inventory rather than a vulnerability scan or security guarantee. Signed Windows installers and packaged Linux services are future release gates. npm tarballs are not a supported distribution format.
 

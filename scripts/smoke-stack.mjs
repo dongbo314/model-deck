@@ -9,6 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { DASHBOARD_ERROR_CODES } from '../controller/http/dashboard-errors.mjs';
+import { verifyBundledChineseFont } from './smoke-dashboard-assets.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dashboardToken = 'stack-dashboard-fixture';
@@ -98,6 +99,7 @@ try {
   assert.match(html, /Model Deck Core/);
   assert.match(html, /简体中文/);
   assert.match(html, /\/_next\/static\/chunks\/app\/page-[a-f0-9]{16}\.js/);
+  await verifyBundledChineseFont(htmlResponse, html, dashboardOrigin);
   assert.equal(html.includes(managementToken), false);
   assert.equal(html.includes(dashboardToken), false);
   assert.match(logs, new RegExp(`#token=${dashboardToken}`));

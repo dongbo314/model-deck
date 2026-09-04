@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { request as httpRequest } from 'node:http';
 import { DASHBOARD_ERROR_CODES } from '../controller/http/dashboard-errors.mjs';
+import { verifyBundledChineseFont } from './smoke-dashboard-assets.mjs';
 
 const controllerOrigin = process.env.MODELDECK_SMOKE_CONTROLLER_ORIGIN || 'http://127.0.0.1:8080';
 const dashboardOrigin = process.env.MODELDECK_SMOKE_DASHBOARD_ORIGIN || 'http://127.0.0.1:3000';
@@ -47,6 +48,7 @@ const html = await htmlResponse.text();
 assert.match(html, /Model Deck Core/);
 assert.match(html, /简体中文/);
 assert.match(html, /\/_next\/static\/chunks\/app\/page-[a-f0-9]{16}\.js/);
+await verifyBundledChineseFont(htmlResponse, html, dashboardOrigin);
 
 assert.equal((await fetch(`${controllerOrigin}/api/state`)).status, 401);
 assert.equal((await fetch(`${controllerOrigin}/v1/models`)).status, 503);

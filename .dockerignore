@@ -4,6 +4,9 @@
 !next.config.ts
 !next-env.d.ts
 !tsconfig.json
+!LICENSE
+!NOTICE
+!THIRD_PARTY_NOTICES.md
 !app/
 !app/**
 !bin/

@@ -42,6 +42,7 @@ COPY --from=build --chown=node:node /app/resources ./resources
 COPY --from=build --chown=node:node /app/scripts/run-next.mjs ./scripts/run-next.mjs
 COPY --chown=node:node scripts/container-healthcheck.mjs ./scripts/container-healthcheck.mjs
 COPY --from=build --chown=node:node /app/next.config.ts /app/next-env.d.ts /app/tsconfig.json ./
+COPY --chown=node:node LICENSE NOTICE THIRD_PARTY_NOTICES.md ./
 
 RUN mkdir -p /var/lib/modeldeck /app/.next/cache \
   && chown -R node:node /var/lib/modeldeck /app/.next/cache

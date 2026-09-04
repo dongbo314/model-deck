@@ -2,9 +2,8 @@ services:
   model-deck:
     build:
       context: .
-    image: ${MODELDECK_IMAGE:-docker.io/esofk/model-deck:0.1.0-alpha.5}
+    image: ${MODELDECK_IMAGE:-docker.io/esofk/model-deck:0.1.0-alpha.6}
     pull_policy: missing
-    platform: linux/amd64
     init: true
     restart: unless-stopped
     env_file:

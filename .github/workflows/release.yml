@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: modeldeck-container-release
   cancel-in-progress: false
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025, macos-14]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-14]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -43,12 +43,22 @@ jobs:
       - run: npm run security:signatures
 
   validate-container:
-    name: Validate Docker Compose / linux-amd64
-    runs-on: ubuntu-24.04
+    name: Validate Docker Compose / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+            architecture: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+            architecture: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     env:
       DOCKER_BUILDKIT: "1"
-      MODELDECK_IMAGE: model-deck-core:release-validation
+      MODELDECK_IMAGE: model-deck-core:release-validation-${{ matrix.architecture }}
       MODELDECK_MANAGEMENT_TOKEN: modeldeck-release-management-fixture
       MODELDECK_DASHBOARD_TOKEN: modeldeck-release-dashboard-fixture
     steps:
@@ -74,6 +84,7 @@ jobs:
       - name: Verify image runtime identity and health check
         shell: bash
         run: |
+          test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Architecture}}')" = "${{ matrix.architecture }}"
           test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Config.User}}')" = "node"
           test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{json .Config.Healthcheck.Test}}')" != "null"
       - name: Start hardened container
@@ -120,14 +131,23 @@ jobs:
         continue-on-error: true
         run: docker compose down --volumes --remove-orphans
 
-  publish-container:
-    name: Publish Docker Hub / linux-amd64
+  publish-container-platform:
+    name: Build and verify Docker Hub / ${{ matrix.platform }}
     needs: [validate-core, validate-container]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    outputs:
-      digest: ${{ steps.push.outputs.digest }}
-      image: ${{ steps.image.outputs.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux/amd64
+            architecture: amd64
+            pair: linux-amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            architecture: arm64
+            pair: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     env:
       DOCKER_BUILDKIT: "1"
       DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
@@ -142,12 +162,12 @@ jobs:
         with:
           node-version: 22.13.0
       - name: Verify configured publication target
-        id: image
         shell: bash
         run: |
           test "$DOCKERHUB_USERNAME" = "esofk"
           test "$IMAGE" = "docker.io/esofk/model-deck"
-          printf 'name=%s\n' "$IMAGE" >> "$GITHUB_OUTPUT"
+          test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+          test "$(docker version --format '{{.Server.Arch}}')" = "${{ matrix.architecture }}"
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: Log in to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -163,44 +183,45 @@ jobs:
           flavor: latest=false
           tags: |
             type=semver,pattern={{version}}
-      - name: Build and push published image
+      - name: Build and push immutable platform image
         id: push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          platforms: linux/amd64
+          platforms: ${{ matrix.platform }}
           pull: true
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          cache-from: type=gha,scope=modeldeck-release-amd64
-          cache-to: type=gha,mode=max,scope=modeldeck-release-amd64
+          cache-from: type=gha,scope=modeldeck-release-${{ matrix.pair }}
+          cache-to: type=gha,mode=max,scope=modeldeck-release-${{ matrix.pair }}
           provenance: mode=max
           sbom: true
-      - name: Select immutable registry artifact
+      - name: Select and inspect immutable platform artifact
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
         shell: bash
         run: |
-          test -n "$DIGEST"
-          docker buildx imagetools inspect "$IMAGE@$DIGEST"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Manifest}}' \
+            | node scripts/verify-container-index.mjs - "${{ matrix.platform }}"
           printf 'MODELDECK_IMAGE=%s@%s\n' "$IMAGE" "$DIGEST" >> "$GITHUB_ENV"
+          printf 'PLATFORM_DIGEST=%s\n' "$DIGEST" >> "$GITHUB_ENV"
       - name: Prepare ignored container environment
         shell: bash
         run: |
           cp packaging/docker/modeldeck.env.example modeldeck.env
           printf '\nMODELDECK_MANAGEMENT_TOKEN=%s\nMODELDECK_DASHBOARD_TOKEN=%s\n' "$MODELDECK_MANAGEMENT_TOKEN" "$MODELDECK_DASHBOARD_TOKEN" >> modeldeck.env
           chmod 600 modeldeck.env
-      - name: Pull immutable registry artifact
+      - name: Pull immutable platform artifact
         run: docker compose pull model-deck
       - name: Verify pulled image identity
         shell: bash
         run: |
-          test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Architecture}}')" = "amd64"
+          test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Architecture}}')" = "${{ matrix.architecture }}"
           test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Config.User}}')" = "node"
           test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{json .Config.Healthcheck.Test}}')" != "null"
-      - name: Start published image with hardened profile
+      - name: Start published platform image with hardened profile
         run: docker compose up --no-build --detach --wait --wait-timeout 120
       - name: Verify published container hardening
         shell: bash
@@ -218,9 +239,9 @@ jobs:
           test "$(docker inspect "$container_id" --format '{{(index (index .NetworkSettings.Ports "3000/tcp") 0).HostIp}}')" = "127.0.0.1"
           test "$(docker inspect "$container_id" --format '{{(index (index .NetworkSettings.Ports "8080/tcp") 0).HostIp}}')" = "127.0.0.1"
           test "$(docker compose exec -T model-deck id -u)" != "0"
-      - name: Exercise published container stack
+      - name: Exercise published platform image
         run: npm run smoke:container -- create
-      - name: Recreate published container while preserving its volume
+      - name: Recreate published platform image while preserving its volume
         shell: bash
         run: |
           docker compose rm --stop --force model-deck
@@ -235,23 +256,19 @@ jobs:
           test "$(docker inspect "$container_id" --format '{{.State.Running}}')" = "false"
           test "$(docker inspect "$container_id" --format '{{.State.ExitCode}}')" = "0"
           test "$(docker inspect "$container_id" --format '{{.State.OOMKilled}}')" = "false"
-      - name: Promote verified digest to alpha
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
+      - name: Record verified platform digest
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          test "$version" = "$(node -p "require('./package.json').version")"
-          docker buildx imagetools create --tag "$IMAGE:alpha" "$IMAGE@$DIGEST"
-          for reference in "$IMAGE:$version" "$IMAGE:alpha"; do
-            resolved=""
-            for attempt in {1..12}; do
-              resolved="$(docker buildx imagetools inspect "$reference" 2>/dev/null | awk '$1 == "Digest:" { print $2; exit }' || true)"
-              test "$resolved" = "$DIGEST" && break
-              sleep 5
-            done
-            test "$resolved" = "$DIGEST"
-          done
+          mkdir -p "$RUNNER_TEMP/container-digests"
+          printf '%s\n' "$PLATFORM_DIGEST" > "$RUNNER_TEMP/container-digests/${{ matrix.pair }}.txt"
+      - name: Upload verified platform digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: modeldeck-digest-${{ matrix.pair }}
+          path: ${{ runner.temp }}/container-digests/*.txt
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
       - name: Show published container logs
         if: always()
         continue-on-error: true
@@ -260,6 +277,185 @@ jobs:
         if: always()
         continue-on-error: true
         run: docker compose down --volumes --remove-orphans
+
+  publish-container:
+    name: Publish Docker Hub multi-architecture index
+    needs: publish-container-platform
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+      image: ${{ steps.publish.outputs.image }}
+    env:
+      DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+      IMAGE: docker.io/${{ vars.DOCKERHUB_IMAGE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.13.0
+      - name: Download verified platform digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: modeldeck-digest-*
+          path: ${{ runner.temp }}/container-digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Log in to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: docker.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Plan and publish verified multi-architecture index
+        id: publish
+        shell: bash
+        run: |
+          test "$DOCKERHUB_USERNAME" = "esofk"
+          test "$IMAGE" = "docker.io/esofk/model-deck"
+          version="${GITHUB_REF_NAME#v}"
+          test "$version" = "$(node -p "require('./package.json').version")"
+
+          read -r amd64_digest < "$RUNNER_TEMP/container-digests/linux-amd64.txt"
+          read -r arm64_digest < "$RUNNER_TEMP/container-digests/linux-arm64.txt"
+          [[ "$amd64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$arm64_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          test "$amd64_digest" != "$arm64_digest"
+          test "$(find "$RUNNER_TEMP/container-digests" -maxdepth 1 -type f -name '*.txt' | wc -l | tr -d ' ')" = "2"
+
+          annotations=(
+            --annotation "index:org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY"
+            --annotation "index:org.opencontainers.image.revision=$GITHUB_SHA"
+            --annotation "index:org.opencontainers.image.version=$version"
+            --annotation "index:org.opencontainers.image.title=Model Deck Core"
+            --annotation "index:org.opencontainers.image.description=Published Model Deck Core container preview"
+            --annotation "index:org.opencontainers.image.licenses=Apache-2.0"
+          )
+          sources=("$IMAGE@$amd64_digest" "$IMAGE@$arm64_digest")
+          planned_index="$RUNNER_TEMP/planned-container-index.json"
+          docker buildx imagetools create --dry-run "${annotations[@]}" "${sources[@]}" > "$planned_index"
+          node scripts/verify-container-index.mjs "$planned_index" linux/amd64 linux/arm64
+
+          inspect_descriptor() {
+            local reference="$1"
+            local output="$2"
+            local error_output="$3"
+            for attempt in {1..4}; do
+              if docker buildx imagetools inspect "$reference" --format '{{json .Manifest}}' > "$output" 2> "$error_output"; then
+                return 0
+              fi
+              if grep -Eqi 'manifest unknown|not found|no such manifest' "$error_output"; then
+                return 2
+              fi
+              if [ "$attempt" -eq 4 ]; then
+                cat "$error_output" >&2
+                return 1
+              fi
+              sleep 5
+            done
+          }
+
+          wait_for_descriptor() {
+            local reference="$1"
+            local output="$2"
+            local error_output="$3"
+            for attempt in {1..12}; do
+              if docker buildx imagetools inspect "$reference" --format '{{json .Manifest}}' > "$output" 2> "$error_output"; then
+                return 0
+              fi
+              sleep 5
+            done
+            cat "$error_output" >&2
+            return 1
+          }
+
+          exact_descriptor="$RUNNER_TEMP/version-descriptor.json"
+          exact_error="$RUNNER_TEMP/version-descriptor.error"
+          exact_status=0
+          inspect_descriptor "$IMAGE:$version" "$exact_descriptor" "$exact_error" || exact_status=$?
+          created_exact=false
+          case "$exact_status" in
+            0)
+              echo "Release-specific tag already exists; verifying and reusing its immutable index."
+              ;;
+            2)
+              docker buildx imagetools create \
+                --tag "$IMAGE:$version" \
+                "${annotations[@]}" \
+                "${sources[@]}"
+              created_exact=true
+              wait_for_descriptor "$IMAGE:$version" "$exact_descriptor" "$exact_error"
+              ;;
+            *)
+              exit "$exact_status"
+              ;;
+          esac
+
+          version_digest="$(node -e "const value=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).digest||'';process.stdout.write(value)" "$exact_descriptor")"
+          [[ "$version_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          version_index="$RUNNER_TEMP/version-index.json"
+          version_error="$RUNNER_TEMP/version-index.error"
+          for attempt in {1..6}; do
+            if docker buildx imagetools inspect --raw "$IMAGE@$version_digest" > "$version_index" 2> "$version_error"; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              cat "$version_error" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          node scripts/verify-container-index.mjs "$version_index" linux/amd64 linux/arm64
+          node --input-type=module - "$version_index" "$version_digest" "$GITHUB_SHA" "$version" "https://github.com/$GITHUB_REPOSITORY" <<'NODE'
+          import assert from 'node:assert/strict';
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          const [, , indexPath, expectedDigest, revision, version, source] = process.argv;
+          const bytes = readFileSync(indexPath);
+          assert.equal(`sha256:${createHash('sha256').update(bytes).digest('hex')}`, expectedDigest, 'Release index bytes do not match its registry digest.');
+          const index = JSON.parse(bytes);
+          const annotations = index.annotations || {};
+          assert.equal(annotations['org.opencontainers.image.source'], source, 'Release index source annotation is invalid.');
+          assert.equal(annotations['org.opencontainers.image.revision'], revision, 'Existing release tag belongs to a different commit.');
+          assert.equal(annotations['org.opencontainers.image.version'], version, 'Release index version annotation is invalid.');
+          assert.equal(annotations['org.opencontainers.image.licenses'], 'Apache-2.0', 'Release index license annotation is invalid.');
+          NODE
+
+          if [ "$created_exact" = "true" ]; then
+            node --input-type=module - "$planned_index" "$version_index" <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const [, , plannedPath, publishedPath] = process.argv;
+          assert.deepEqual(JSON.parse(readFileSync(publishedPath, 'utf8')), JSON.parse(readFileSync(plannedPath, 'utf8')), 'Published release index differs from the verified plan.');
+          NODE
+          fi
+
+          latest_alpha="$(git tag --list 'v*-alpha.*' --sort=-version:refname | sed -n '1p')"
+          test -n "$latest_alpha"
+          if [ "$latest_alpha" = "$GITHUB_REF_NAME" ]; then
+            docker buildx imagetools create --tag "$IMAGE:alpha" "$IMAGE@$version_digest"
+            alpha_descriptor="$RUNNER_TEMP/alpha-descriptor.json"
+            alpha_error="$RUNNER_TEMP/alpha-descriptor.error"
+            alpha_digest=""
+            for attempt in {1..12}; do
+              if docker buildx imagetools inspect "$IMAGE:alpha" --format '{{json .Manifest}}' > "$alpha_descriptor" 2> "$alpha_error"; then
+                alpha_digest="$(node -e "const value=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).digest||'';process.stdout.write(value)" "$alpha_descriptor")"
+                if [ "$alpha_digest" = "$version_digest" ]; then
+                  break
+                fi
+              fi
+              sleep 5
+            done
+            test "$alpha_digest" = "$version_digest"
+          else
+            echo "Not moving alpha: $latest_alpha is newer than $GITHUB_REF_NAME."
+          fi
+
+          printf 'digest=%s\n' "$version_digest" >> "$GITHUB_OUTPUT"
+          printf 'image=%s\n' "$IMAGE" >> "$GITHUB_OUTPUT"
 
   publish-source:
     name: Publish source preview

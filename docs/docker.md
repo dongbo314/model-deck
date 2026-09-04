@@ -1,6 +1,6 @@
 # Docker Compose deployment
 
-The Docker profile is a Core Preview deployment for Windows x64 with Docker Desktop and Linux x64 with Docker Engine. It runs the published [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) image as a Linux `amd64` container. The first image release does not support `linux/arm64`.
+The Docker profile is a Core Preview deployment for Windows x64 with Docker Desktop and Linux x64/arm64 with Docker Engine. The published [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) index contains native Linux `amd64` and `arm64` variants; Compose selects the matching architecture automatically.
 
 ## Prerequisites
 
@@ -12,13 +12,13 @@ The Docker profile is a Core Preview deployment for Windows x64 with Docker Desk
 
 | Tag | Meaning |
 |---|---|
-| `0.1.0-alpha.5` | Release-specific tag for this preview |
+| `0.1.0-alpha.6` | Release-specific tag for this preview |
 | `alpha` | Moving tag for the newest alpha preview |
 | `latest` | Deliberately not published |
 
-The checked-in Compose file defaults to `docker.io/esofk/model-deck:0.1.0-alpha.5`. Prefer this release-specific tag for repeatable deployments; use `alpha` only when intentionally following the newest preview.
+The checked-in Compose file defaults to `docker.io/esofk/model-deck:0.1.0-alpha.6`. Prefer this release-specific tag for repeatable deployments; use `alpha` only when intentionally following the newest preview.
 
-The release workflow builds the image with BuildKit provenance and an SBOM. After publication, CI pulls the published artifact by its immutable digest and reruns the container checks against that exact artifact instead of trusting a mutable tag. Provenance records build origin and the SBOM inventories included software; an SBOM is not a vulnerability scan, exploitability assessment or security guarantee.
+The release workflow builds each architecture on a native hosted runner with BuildKit provenance and an SBOM. It pulls and exercises each platform artifact by immutable digest before merging them into the release index. Provenance records build origin and the SBOM inventories included software; an SBOM is not a vulnerability scan, exploitability assessment or security guarantee.
 
 ## Start
 
@@ -128,7 +128,7 @@ Anyone with Docker administrator access can inspect container environment variab
 
 ## Preview limitations
 
-- The supported image target is `linux/amd64`.
+- The supported image targets are `linux/amd64` and `linux/arm64`.
 - Remote provider URLs must use HTTPS.
 - Host-local HTTP providers such as `http://host.docker.internal:*` are rejected in this preview.
 - GPU inference, audio/video, MLX/MPS, ComfyUI and virtual microphone integrations are not included.
@@ -151,3 +151,5 @@ docker compose up --build -d
 ```
 
 If the container is unhealthy, confirm that ports 3000 and 8080 are free and that `modeldeck.env` exists. The health check exercises the Dashboard and its internal connection to the controller.
+
+The Dashboard bundles its own Noto Sans SC web font. If Chinese still appears as hexadecimal boxes after upgrading, confirm that the running image is `0.1.0-alpha.6`, force-refresh the page, and check that `/_next/static/media/noto-sans-sc-*.woff2` requests succeed. Installing fonts inside the container does not change fonts available to a host browser.

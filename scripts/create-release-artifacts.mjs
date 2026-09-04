@@ -87,14 +87,14 @@ for (const path of paths) {
 }
 
 await writeFile(manifestPath, `${JSON.stringify({
-  schemaVersion: 1,
+  schemaVersion: 2,
   product: 'Model Deck Core',
   maturity: 'preview',
   version,
   tag: expectedTag,
   commit,
   distribution: 'source',
-  supportedTargets: ['Windows 11 x64', 'Ubuntu 24.04 x64', 'macOS 14 arm64/x64'],
+  supportedTargets: ['Windows 11 x64', 'Ubuntu 24.04 x64/arm64', 'macOS 14 arm64/x64'],
   container: {
     distribution: 'registry-image',
     imagePublished: hasContainerEvidence,
@@ -102,8 +102,8 @@ await writeFile(manifestPath, `${JSON.stringify({
     image: 'esofk/model-deck',
     versionTag: version,
     floatingTag: 'alpha',
-    platform: 'linux/amd64',
-    hosts: ['Windows x64 with Docker Desktop', 'Linux x64 with Docker Engine'],
+    platforms: ['linux/amd64', 'linux/arm64'],
+    hosts: ['Windows x64 with Docker Desktop', 'Linux x64 with Docker Engine', 'Linux arm64 with Docker Engine'],
     attestations: ['provenance', 'sbom'],
     ...(hasContainerEvidence ? {
       digest: containerDigest,
@@ -119,7 +119,7 @@ if (hasContainerEvidence) {
     `image=${containerImage}`,
     `digest=${containerDigest}`,
     `immutable=${containerImage}@${containerDigest}`,
-    'platform=linux/amd64',
+    'platforms=linux/amd64,linux/arm64',
     `versionTag=${version}`,
     'floatingTag=alpha',
     `commit=${commit}`,

@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025, macos-14]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, windows-2025, macos-14]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     env:
@@ -97,12 +97,22 @@ jobs:
           npm run smoke:stack
 
   docker-compose:
-    name: Docker Compose / linux-amd64
-    runs-on: ubuntu-24.04
+    name: Docker Compose / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-amd64
+            architecture: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+            architecture: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     env:
       DOCKER_BUILDKIT: "1"
-      MODELDECK_IMAGE: model-deck-core:ci
+      MODELDECK_IMAGE: model-deck-core:ci-${{ matrix.architecture }}
       MODELDECK_MANAGEMENT_TOKEN: modeldeck-ci-management-fixture
       MODELDECK_DASHBOARD_TOKEN: modeldeck-ci-dashboard-fixture
     steps:
@@ -123,6 +133,7 @@ jobs:
       - name: Verify image runtime identity and health check
         shell: bash
         run: |
+          test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Architecture}}')" = "${{ matrix.architecture }}"
           test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{.Config.User}}')" = "node"
           test "$(docker image inspect "$MODELDECK_IMAGE" --format '{{json .Config.Healthcheck.Test}}')" != "null"
       - name: Start hardened container

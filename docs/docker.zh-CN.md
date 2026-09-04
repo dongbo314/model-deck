@@ -1,6 +1,6 @@
 # Docker Compose 部署
 
-Docker 配置是面向 Windows x64 Docker Desktop 和 Linux x64 Docker Engine 的核心预览部署方式。它会以 Linux `amd64` 容器运行已经发布的 [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) 镜像。首个镜像版本不支持 `linux/arm64`。
+Docker 配置是面向 Windows x64 Docker Desktop 和 Linux x64/arm64 Docker Engine 的核心预览部署方式。已经发布的 [`docker.io/esofk/model-deck`](https://hub.docker.com/r/esofk/model-deck) 镜像索引包含原生 Linux `amd64` 与 `arm64` 版本，Compose 会自动选择匹配的架构。
 
 ## 前置条件
 
@@ -12,13 +12,13 @@ Docker 配置是面向 Windows x64 Docker Desktop 和 Linux x64 Docker Engine �
 
 | 标签 | 含义 |
 |---|---|
-| `0.1.0-alpha.5` | 当前预览版的固定版本标签 |
+| `0.1.0-alpha.6` | 当前预览版的固定版本标签 |
 | `alpha` | 始终指向最新 alpha 预览版的浮动标签 |
 | `latest` | 有意不发布 |
 
-仓库中的 Compose 文件默认使用 `docker.io/esofk/model-deck:0.1.0-alpha.5`。需要可重复部署时应优先使用固定版本标签；只有在明确希望自动跟随最新预览版时，才使用 `alpha`。
+仓库中的 Compose 文件默认使用 `docker.io/esofk/model-deck:0.1.0-alpha.6`。需要可重复部署时应优先使用固定版本标签；只有在明确希望自动跟随最新预览版时，才使用 `alpha`。
 
-发布流水线会为镜像生成 BuildKit provenance（构建来源证明）和 SBOM（软件物料清单）。推送完成后，CI 会按照不可变的镜像摘要（digest）拉取已发布产物，并针对这个确定产物重新执行容器检查，而不是只信任可能变化的标签。provenance 用于记录构建来源，SBOM 用于列出镜像所含软件；SBOM 不等于漏洞扫描、可利用性评估或安全保证。
+发布流水线会在原生托管运行器上分别构建两个架构，并生成 BuildKit provenance（构建来源证明）和 SBOM（软件物料清单）。每个平台产物都会按照不可变摘要（digest）被重新拉取和运行验证，通过后才合并为正式版本索引。provenance 用于记录构建来源，SBOM 用于列出镜像所含软件；SBOM 不等于漏洞扫描、可利用性评估或安全保证。
 
 ## 启动
 
@@ -128,7 +128,7 @@ Windows Docker Desktop 必须使用 Engine 28.0 或更高版本，因为旧版 E
 
 ## 预览版限制
 
-- 受支持的镜像目标是 `linux/amd64`。
+- 受支持的镜像目标是 `linux/amd64` 与 `linux/arm64`。
 - 远程模型提供商 URL 必须使用 HTTPS。
 - 当前预览版会拒绝 `http://host.docker.internal:*` 等运行在宿主机上的 HTTP 服务。
 - 不包含 GPU 推理、音视频、MLX/MPS、ComfyUI 或虚拟麦克风集成。
@@ -151,3 +151,5 @@ docker compose up --build -d
 ```
 
 如果容器状态为不健康，请确认 3000 和 8080 端口没有被占用，并且 `modeldeck.env` 已存在。健康检查会同时验证控制面板及其到控制器的内部连接。
+
+控制面板会自行提供 Noto Sans SC 网页字体。升级后如果中文仍显示为带十六进制编码的方框，请先确认运行镜像是 `0.1.0-alpha.6`，再强制刷新页面，并检查 `/_next/static/media/noto-sans-sc-*.woff2` 请求是否成功。给容器安装桌面字体不会改变宿主机浏览器可用的字体。

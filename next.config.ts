@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
         { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
         {
           key: 'Content-Security-Policy',
-          value: "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+          value: "default-src 'self'; connect-src 'self' http://127.0.0.1:* http://localhost:*; font-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
         },
       ],
     }];

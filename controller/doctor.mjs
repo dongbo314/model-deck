@@ -16,7 +16,8 @@ function atLeast(actual, required) {
 
 export function supportedArchitecture(platform = process.platform, architecture = process.arch) {
   if (platform === 'darwin') return ['arm64', 'x64'].includes(architecture);
-  if (platform === 'linux' || platform === 'win32') return architecture === 'x64';
+  if (platform === 'linux') return ['arm64', 'x64'].includes(architecture);
+  if (platform === 'win32') return architecture === 'x64';
   return false;
 }
 
@@ -31,7 +32,7 @@ export async function runDoctor({ env = process.env, platform = process.platform
     id: 'architecture',
     ok: architectureOk,
     level: architectureOk ? 'ok' : 'error',
-    message: `Architecture ${architecture}; supported targets are Windows x64, Linux x64, and macOS arm64/x64`,
+    message: `Architecture ${architecture}; supported targets are Windows x64, Linux arm64/x64, and macOS arm64/x64`,
   });
 
   let core;

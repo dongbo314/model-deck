@@ -4,7 +4,7 @@
 
 Model Deck Core 是面向 OpenAI 兼容模型提供商和可复用角色的本地跨平台控制中心。Windows、Linux 和 macOS 用户可以通过统一的控制面板和本地 API 使用模型服务，而无须在程序中捆绑模型权重、私有凭据或特定硬件运行时。
 
-> **当前状态：** `0.1.0-alpha.5` 核心预览版。远程模型提供商链路和可直接拉取的 Docker Compose 部署已经实现，并通过 CI 验证。首个 Docker Hub 镜像仅支持 `linux/amd64`；本地推理和媒体能力包仍在路线图中，尚未作为已完成功能提供。
+> **当前状态：** `0.1.0-alpha.6` 核心预览版。远程模型提供商链路、中英文控制面板和可直接拉取的 Docker Compose 部署已经实现，并通过 CI 验证。Docker Hub 镜像原生支持 `linux/amd64` 与 `linux/arm64`；本地推理和媒体能力包仍在路线图中，尚未作为已完成功能提供。
 
 ## 版本划分
 
@@ -32,10 +32,10 @@ Model Deck Core 是面向 OpenAI 兼容模型提供商和可复用角色的本�
 
 ## 系统要求
 
-- Windows x64、Linux x64，或 macOS arm64/x64
+- Windows x64、Linux x64/arm64，或 macOS arm64/x64
 - 至少一个用于对话的 OpenAI 兼容模型提供商
 
-源码安装需要 Node.js 22.13 或更高版本，以及 npm 10 或更高版本。也可以在 Windows x64 上使用 Engine 28.0 或更高版本的 Docker Desktop，或在 Linux x64 上使用 Docker Engine 28.3.3 或更高版本，并配合 Docker Compose v2；当前预览容器以 `linux/amd64` 运行。
+源码安装需要 Node.js 22.13 或更高版本，以及 npm 10 或更高版本。也可以在 Windows x64 上使用 Engine 28.0 或更高版本的 Docker Desktop，或在 Linux x64/arm64 上使用 Docker Engine 28.3.3 或更高版本，并配合 Docker Compose v2。Compose 会自动选择与宿主机匹配的已发布架构。
 
 Windows ARM64 或许可以通过 x64 版 Node.js 运行，但它不是首发版本的验证目标。
 
@@ -66,7 +66,7 @@ npm start
 
 打开 `npm start` 输出的安全控制面板 URL。URL 片段中携带一次性会话令牌，页面加载后会从地址栏中移除。显式启用可选的 OpenAI 兼容 API 后，可以通过 <http://127.0.0.1:8080/v1> 访问。
 
-当前源码检出版本的控制面板默认使用简体中文，并在页头提供可持久保存的中英文切换。如果页面提示“需要安全会话”，不会再直接把它判定为控制器离线；服务重启会使旧的浏览器会话令牌失效，此时应重新打开最新启动日志中的完整 URL。在下一个镜像标签发布前，这些变化列在 `Unreleased` 中。
+控制面板默认使用简体中文，并在页头提供可持久保存的中英文切换。Noto Sans SC 网页字体由应用自身提供，因此 Linux 浏览器不需要安装系统中文字体，也不会连接外部字体服务。如果页面提示“需要安全会话”，不会再直接把它判定为控制器离线；服务重启会使旧的浏览器会话令牌失效，此时应重新打开最新启动日志中的完整 URL。
 
 Windows PowerShell 和 Linux 的具体说明分别见 [docs/windows.md](docs/windows.md) 和 [docs/linux.md](docs/linux.md)。
 
@@ -84,7 +84,7 @@ docker compose up -d
 docker compose logs --tail=50 model-deck
 ```
 
-当前版本的固定标签是 `0.1.0-alpha.5`；浮动标签 `alpha` 始终指向最新预览版。项目有意不发布 `latest` 标签。首个公开镜像仅支持 `linux/amd64`。如果希望使用当前检出的源码自行构建，请改用 `docker compose up --build -d`。
+当前版本的固定标签是 `0.1.0-alpha.6`；浮动标签 `alpha` 始终指向最新预览版。项目有意不发布 `latest` 标签。镜像索引包含原生 `linux/amd64` 与 `linux/arm64` 版本，Compose 会自动选择宿主机架构。如果希望使用当前检出的源码自行构建，请改用 `docker compose up --build -d`。
 
 打开日志中最后一条 `Model Deck Core dashboard:` URL。该 URL 及包含它的日志都应视为敏感信息。
 
@@ -203,13 +203,13 @@ npm run dev
 
 源码构建通过并不能证明打包后的应用可以正常工作。Core 版本发布要求：
 
-1. Linux、Windows 和 macOS CI 检查通过。
-2. 在三个托管操作系统上完成控制器和控制面板的全链路冒烟测试。
+1. Linux x64/arm64、Windows 和 macOS CI 检查通过。
+2. 在每个托管目标上完成控制器和控制面板的全链路冒烟测试。
 3. 通过模拟模型提供商验证远程模型路由。
 4. 完成秘密信息和个人路径扫描。
 5. 提供发行包文件清单和校验和。
-6. 在托管 Linux 环境中完成基于源码构建的非 root Docker Compose 冒烟测试，包括健康状态、回环端口发布和数据卷持久化检查。
-7. 发布带有 BuildKit provenance（构建来源证明）和 SBOM（软件物料清单）的 `linux/amd64` 镜像；发布后不依赖可变标签，而是按不可变镜像摘要（digest）重新拉取并完成运行复验。
+6. 在原生托管 Linux x64 与 arm64 环境中完成基于源码构建的非 root Docker Compose 冒烟测试，包括健康状态、回环端口发布和数据卷持久化检查。
+7. 分别发布带有 BuildKit provenance（构建来源证明）和 SBOM（软件物料清单）的不可变 `linux/amd64` 与 `linux/arm64` 产物并完成原生运行复验，再合并为正式版本索引。
 
 GitHub 附件仍是仅包含源码的开发者预览包，Docker Hub 则提供预构建的 Core 容器镜像。provenance 和 SBOM 可以提升构建可追溯性，但 SBOM 只是组件清单，不等同于漏洞扫描，也不是安全保证。签名的 Windows 安装程序和打包后的 Linux 服务仍属于后续发布门槛。npm tarball 不是受支持的分发格式。
 

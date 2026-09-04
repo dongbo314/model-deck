@@ -105,7 +105,7 @@ for (const name of artifactNames) {
 }
 
 const manifest = JSON.parse(await readFile(join(releaseDirectory, `${baseName}-manifest.json`), 'utf8'));
-assert(manifest.schemaVersion === 1, 'Unsupported release manifest schema.');
+assert(manifest.schemaVersion === 2, 'Unsupported release manifest schema.');
 assert(manifest.product === 'Model Deck Core', 'Release manifest product is invalid.');
 assert(manifest.maturity === 'preview', 'Release manifest maturity is invalid.');
 assert(manifest.distribution === 'source', 'Release manifest distribution is invalid.');
@@ -115,8 +115,8 @@ assert(manifest.container?.registry === 'docker.io', 'Release manifest container
 assert(manifest.container?.image === 'esofk/model-deck', 'Release manifest container image is invalid.');
 assert(manifest.container?.versionTag === version, 'Release manifest container version tag is invalid.');
 assert(manifest.container?.floatingTag === 'alpha', 'Release manifest container floating tag is invalid.');
-assert(manifest.container?.platform === 'linux/amd64', 'Release manifest container platform is invalid.');
-assert(Array.isArray(manifest.container?.hosts) && manifest.container.hosts.length === 2, 'Release manifest container hosts are invalid.');
+assert(JSON.stringify(manifest.container?.platforms) === JSON.stringify(['linux/amd64', 'linux/arm64']), 'Release manifest container platforms are invalid.');
+assert(JSON.stringify(manifest.container?.hosts) === JSON.stringify(['Windows x64 with Docker Desktop', 'Linux x64 with Docker Engine', 'Linux arm64 with Docker Engine']), 'Release manifest container hosts are invalid.');
 assert(JSON.stringify(manifest.container?.attestations) === JSON.stringify(['provenance', 'sbom']), 'Release manifest container attestations are invalid.');
 if (hasContainerEvidence) {
   assert(manifest.container?.digest === containerDigest, 'Release manifest container digest is invalid.');
@@ -154,7 +154,7 @@ if (hasContainerEvidence) {
     `image=${containerImage}`,
     `digest=${containerDigest}`,
     `immutable=${containerImage}@${containerDigest}`,
-    'platform=linux/amd64',
+    'platforms=linux/amd64,linux/arm64',
     `versionTag=${version}`,
     'floatingTag=alpha',
     `commit=${commit}`,
