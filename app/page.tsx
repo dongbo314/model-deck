@@ -7,6 +7,7 @@ import {
   shouldOfferConnectionRetry,
 } from '@/controller/http/dashboard-errors.mjs';
 import { isLocale, translate, type Locale, type MessageKey } from './i18n';
+import { SelectField } from './select-field';
 
 type Capability = { state: 'available' | 'planned' | 'unavailable'; reason?: string };
 type Provider = {
@@ -599,23 +600,20 @@ export default function Home() {
         <header className="topbar">
           <div><p>{t('appEyebrow')}</p><h1>Model Deck Core</h1></div>
           <div className="topbar-actions">
-            <label className="language-control">
-              <span className="sr-only">{t('language')}</span>
-              <select
-                aria-label={t('language')}
-                value={locale}
-                onChange={(event) => {
-                  if (isLocale(event.target.value)) {
-                    setOperationError('');
-                    setLocaleLoaded(true);
-                    setLocale(event.target.value);
-                  }
-                }}
-              >
-                <option value="zh-CN">{t('simplifiedChinese')}</option>
-                <option value="en">{t('english')}</option>
-              </select>
-            </label>
+            <SelectField
+              className="language-control"
+              label={t('language')}
+              hideLabel
+              value={locale}
+              options={[{ value: 'zh-CN', label: t('simplifiedChinese') }, { value: 'en', label: t('english') }]}
+              onChange={(value) => {
+                if (isLocale(value)) {
+                  setOperationError('');
+                  setLocaleLoaded(true);
+                  setLocale(value);
+                }
+              }}
+            />
             <span className={`connection ${connectionStatus === 'offline' ? 'down' : connectionStatus === 'online' || connectionStatus === 'connecting' ? '' : 'attention'}`} role="status" aria-live="polite"><i />{connectionLabel}</span>
           </div>
         </header>
@@ -650,8 +648,8 @@ export default function Home() {
             {sending && <button className="quiet" type="button" onClick={() => abortRef.current?.abort()}>{t('stop')}</button>}
           </SectionTitle>
           <div className="chat-controls">
-            <label>{t('model')}<select value={modelId} onChange={(event) => setModelId(event.target.value)} disabled={!canUseChat || !state?.models.length}>{state?.models.length ? state.models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>) : <option value="">{t('noModelConfigured')}</option>}</select></label>
-            <label>{t('persona')}<select value={personaId} onChange={(event) => setPersonaId(event.target.value)} disabled={!canUseChat}>{state?.personas.map((persona) => <option key={persona.id} value={persona.id}>{displayPersonaName(persona)}</option>)}</select></label>
+            <SelectField label={t('model')} value={modelId} onChange={setModelId} disabled={!canUseChat || !state?.models.length} options={state?.models.length ? state.models.map((model) => ({ value: model.id, label: model.name })) : [{ value: '', label: t('noModelConfigured') }]} />
+            <SelectField label={t('persona')} value={personaId} onChange={setPersonaId} disabled={!canUseChat} options={state?.personas.map((persona) => ({ value: persona.id, label: displayPersonaName(persona) })) || []} />
           </div>
           <div className="messages" ref={messagesRef} aria-live="off" onScroll={() => {
             const viewport = messagesRef.current;

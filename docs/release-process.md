@@ -15,8 +15,10 @@ Every tagged preview release must satisfy these gates:
 9. Build and push separate immutable `linux/amd64` and `linux/arm64` artifacts with BuildKit provenance and SBOMs, then pull and rerun the full published-artifact checks on their matching native runners before creating any container release tag.
 10. Verify the self-hosted Chinese font CSS and common-CJK WOFF2 asset, merge the verified platform digests into one OCI index, and require the release-specific and `alpha` tags to resolve to that same multi-architecture digest.
 
-The release publishes `0.1.0-alpha.6` as the release-specific container tag and moves `alpha` to the newest prerelease. It deliberately does not publish `latest`. The image index supports native `linux/amd64` and `linux/arm64` containers.
+The release publishes `0.1.0-alpha.7` as the release-specific container tag and moves `alpha` to the newest prerelease. It deliberately does not publish `latest`. The image index supports native `linux/amd64` and `linux/arm64` containers.
 
 The attached provenance records how the image was built, and the SBOM inventories included software. An SBOM is not a vulnerability scan, an exploitability assessment or a security guarantee; vulnerability-management policy remains a separate release and operator responsibility.
+
+For dropdown or font changes, also verify expanded options in the target Linux Firefox browser. Check language switching and persistence after reload, keyboard navigation and Escape cancellation, Chinese model/persona names, disabled controls, and narrow-window list placement. An HTML response or font-asset check alone does not verify a native popup's rendering.
 
 The GitHub archives intentionally do not contain `node_modules` or a prebuilt `.next` directory. Users can run `npm ci && npm run build` on the target system, build the Docker image locally with `docker compose up --build -d`, or pull the published image with `docker compose pull` followed by `docker compose up -d`. Signed installers, background services and native capability packs have separate future acceptance gates.

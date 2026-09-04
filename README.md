@@ -4,7 +4,7 @@
 
 Model Deck Core is a local, cross-platform control plane for OpenAI-compatible model providers and reusable personas. It gives Windows, Linux and macOS users one dashboard and one local API without bundling model weights, private credentials or hardware-specific runtimes.
 
-> **Status:** `0.1.0-alpha.6` Core Preview. The remote-provider path, bilingual Dashboard and published Docker Compose deployment are implemented and covered by CI. The Docker Hub image supports native `linux/amd64` and `linux/arm64`; local inference and media capability packs remain roadmap items, not completed features.
+> **Status:** `0.1.0-alpha.7` Core Preview. The remote-provider path, bilingual Dashboard and published Docker Compose deployment are implemented and covered by CI. The Docker Hub image supports native `linux/amd64` and `linux/arm64`; local inference and media capability packs remain roadmap items, not completed features.
 
 ## Editions
 
@@ -84,7 +84,7 @@ docker compose up -d
 docker compose logs --tail=50 model-deck
 ```
 
-The release-specific tag is `0.1.0-alpha.6`; the moving `alpha` tag follows the newest preview. A `latest` tag is deliberately not published. The image index contains native `linux/amd64` and `linux/arm64` variants, and Compose chooses the host architecture automatically. To build from the checked-out source instead, use `docker compose up --build -d`.
+The release-specific tag is `0.1.0-alpha.7`; the moving `alpha` tag follows the newest preview. A `latest` tag is deliberately not published. The image index contains native `linux/amd64` and `linux/arm64` variants, and Compose chooses the host architecture automatically. To build from the checked-out source instead, use `docker compose up --build -d`.
 
 Open the last `Model Deck Core dashboard:` URL from the logs. Treat that URL and the logs containing it as sensitive.
 

@@ -4,7 +4,7 @@
 
 Model Deck Core 是面向 OpenAI 兼容模型提供商和可复用角色的本地跨平台控制中心。Windows、Linux 和 macOS 用户可以通过统一的控制面板和本地 API 使用模型服务，而无须在程序中捆绑模型权重、私有凭据或特定硬件运行时。
 
-> **当前状态：** `0.1.0-alpha.6` 核心预览版。远程模型提供商链路、中英文控制面板和可直接拉取的 Docker Compose 部署已经实现，并通过 CI 验证。Docker Hub 镜像原生支持 `linux/amd64` 与 `linux/arm64`；本地推理和媒体能力包仍在路线图中，尚未作为已完成功能提供。
+> **当前状态：** `0.1.0-alpha.7` 核心预览版。远程模型提供商链路、中英文控制面板和可直接拉取的 Docker Compose 部署已经实现，并通过 CI 验证。Docker Hub 镜像原生支持 `linux/amd64` 与 `linux/arm64`；本地推理和媒体能力包仍在路线图中，尚未作为已完成功能提供。
 
 ## 版本划分
 
@@ -84,7 +84,7 @@ docker compose up -d
 docker compose logs --tail=50 model-deck
 ```
 
-当前版本的固定标签是 `0.1.0-alpha.6`；浮动标签 `alpha` 始终指向最新预览版。项目有意不发布 `latest` 标签。镜像索引包含原生 `linux/amd64` 与 `linux/arm64` 版本，Compose 会自动选择宿主机架构。如果希望使用当前检出的源码自行构建，请改用 `docker compose up --build -d`。
+当前版本的固定标签是 `0.1.0-alpha.7`；浮动标签 `alpha` 始终指向最新预览版。项目有意不发布 `latest` 标签。镜像索引包含原生 `linux/amd64` 与 `linux/arm64` 版本，Compose 会自动选择宿主机架构。如果希望使用当前检出的源码自行构建，请改用 `docker compose up --build -d`。
 
 打开日志中最后一条 `Model Deck Core dashboard:` URL。该 URL 及包含它的日志都应视为敏感信息。
 

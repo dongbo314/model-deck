@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.1.0-alpha.7
+
+- Replaced native language, model and persona dropdowns with in-page listboxes so expanded Chinese options can use the bundled Noto Sans SC web font in Firefox on Linux.
+- Preserved keyboard selection, Escape cancellation, type-ahead navigation, accessible labels and saved language preferences.
+- Added scrollable, viewport-aware option lists for long model names and smaller windows.
+- Updated the default Compose image to `0.1.0-alpha.7`.
+
 ## 0.1.0-alpha.6
 
 - Added a complete Simplified Chinese Dashboard with a persistent Chinese/English language selector.

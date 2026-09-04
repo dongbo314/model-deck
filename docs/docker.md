@@ -12,11 +12,11 @@ The Docker profile is a Core Preview deployment for Windows x64 with Docker Desk
 
 | Tag | Meaning |
 |---|---|
-| `0.1.0-alpha.6` | Release-specific tag for this preview |
+| `0.1.0-alpha.7` | Release-specific tag for this preview |
 | `alpha` | Moving tag for the newest alpha preview |
 | `latest` | Deliberately not published |
 
-The checked-in Compose file defaults to `docker.io/esofk/model-deck:0.1.0-alpha.6`. Prefer this release-specific tag for repeatable deployments; use `alpha` only when intentionally following the newest preview.
+The checked-in Compose file defaults to `docker.io/esofk/model-deck:0.1.0-alpha.7`. Prefer this release-specific tag for repeatable deployments; use `alpha` only when intentionally following the newest preview.
 
 The release workflow builds each architecture on a native hosted runner with BuildKit provenance and an SBOM. It pulls and exercises each platform artifact by immutable digest before merging them into the release index. Provenance records build origin and the SBOM inventories included software; an SBOM is not a vulnerability scan, exploitability assessment or security guarantee.
 
@@ -152,4 +152,6 @@ docker compose up --build -d
 
 If the container is unhealthy, confirm that ports 3000 and 8080 are free and that `modeldeck.env` exists. The health check exercises the Dashboard and its internal connection to the controller.
 
-The Dashboard bundles its own Noto Sans SC web font. If Chinese still appears as hexadecimal boxes after upgrading, confirm that the running image is `0.1.0-alpha.6`, force-refresh the page, and check that `/_next/static/media/noto-sans-sc-*.woff2` requests succeed. Installing fonts inside the container does not change fonts available to a host browser.
+The Dashboard bundles its own Noto Sans SC web font. If Chinese still appears as hexadecimal boxes after upgrading, confirm that the running image is `0.1.0-alpha.7`, force-refresh the page, and check that `/_next/static/media/noto-sans-sc-*.woff2` requests succeed. Installing fonts inside the container does not change fonts available to a host browser.
+
+In `0.1.0-alpha.6`, expanded native dropdowns can still show missing glyphs because Firefox's native option popup cannot use web fonts. Version `0.1.0-alpha.7` renders the language, model and persona option lists inside the page, where the bundled font applies. Arrow keys, Enter, Space, Escape, Tab and prefix navigation are supported. Fonts in browser-owned UI, including its tab strip, remain controlled by the browser and host system.
