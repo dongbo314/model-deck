@@ -32,13 +32,14 @@ jobs:
       - run: npm run smoke:stack
       - name: Verify Windows launcher exit propagation
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: cmd
         env:
           MODELDECK_HOME: ${{ runner.temp }}/Model Deck 测试
         run: |
-          $env:MODELDECK_DASHBOARD_HOST = '0.0.0.0'
-          cmd /d /c packaging\windows\start-modeldeck.cmd
-          if ($LASTEXITCODE -eq 0) { throw 'Windows launcher did not propagate the expected failure.' }
+          set MODELDECK_DASHBOARD_HOST=0.0.0.0
+          call packaging\windows\start-modeldeck.cmd
+          if errorlevel 1 exit /b 0
+          exit /b 1
       - run: node bin/modeldeck.mjs doctor --json
         env:
           MODELDECK_HOME: ${{ runner.temp }}/Model Deck 测试
