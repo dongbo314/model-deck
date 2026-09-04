@@ -13,7 +13,7 @@ const releaseDirectory = join(repositoryRoot, 'release');
 const packageDocument = JSON.parse(await readFile(join(repositoryRoot, 'package.json'), 'utf8'));
 const version = packageDocument.version;
 const expectedTag = `v${version}`;
-const requestedTag = process.env.GITHUB_REF_NAME;
+const requestedTag = process.env.GITHUB_REF_TYPE === 'tag' ? process.env.GITHUB_REF_NAME : null;
 
 if (requestedTag && requestedTag !== expectedTag) {
   throw new Error(`Release tag ${requestedTag} does not match package version ${expectedTag}.`);

@@ -41,10 +41,10 @@ test('Linux follows XDG directory variables', () => {
       XDG_CACHE_HOME: '/tmp/cache',
     },
   });
-  assert.equal(result.configDir, path.resolve('/tmp/config/modeldeck'));
-  assert.equal(result.dataDir, path.resolve('/tmp/data/modeldeck'));
-  assert.equal(result.stateDir, path.resolve('/tmp/state/modeldeck'));
-  assert.equal(result.cacheDir, path.resolve('/tmp/cache/modeldeck'));
+  assert.equal(result.configDir, path.posix.resolve('/tmp/config/modeldeck'));
+  assert.equal(result.dataDir, path.posix.resolve('/tmp/data/modeldeck'));
+  assert.equal(result.stateDir, path.posix.resolve('/tmp/state/modeldeck'));
+  assert.equal(result.cacheDir, path.posix.resolve('/tmp/cache/modeldeck'));
 });
 
 test('Windows separates roaming configuration from local mutable data', () => {
