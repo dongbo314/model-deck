@@ -27,6 +27,7 @@ jobs:
           node-version: 22.13.0
           cache: npm
       - run: npm ci
+      - run: npm run release:verify
       - run: npm run check
       - run: npm run build
       - run: npm run smoke:stack
