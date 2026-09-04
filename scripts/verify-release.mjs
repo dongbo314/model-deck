@@ -84,8 +84,8 @@ function isAllowedSourcePath(path) {
 async function walk(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const absolute = resolve(directory, entry.name);
-    const path = relative(repositoryRoot, absolute);
-    const root = path.split(sep)[0];
+    const path = relative(repositoryRoot, absolute).split(sep).join('/');
+    const root = path.split('/')[0];
     if (entry.isFile() && entry.name.endsWith('.tsbuildinfo')) continue;
     if (excludedRoots.has(root)) continue;
     if (!allowedRoots.has(root)) {
@@ -98,7 +98,7 @@ async function walk(directory) {
       continue;
     }
     if (entry.isDirectory()) {
-      const segments = path.split(sep).map((segment) => segment.toLowerCase());
+      const segments = path.split('/').map((segment) => segment.toLowerCase());
       if (segments.some((segment) => forbiddenSegments.has(segment))) {
         problems.push(`${path}: mutable/runtime directory is forbidden`);
         continue;
@@ -147,7 +147,7 @@ for (const file of files) {
   totalBytes += file.size;
   const lower = file.path.toLowerCase();
   const suffix = extname(lower);
-  const basename = lower.split(sep).at(-1) || lower;
+  const basename = lower.split('/').at(-1) || lower;
   if (!isAllowedSourcePath(file.path)) {
     problems.push(`${file.path}: file type is not on the source allowlist`);
     continue;

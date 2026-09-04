@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.2
+
+- Normalized public release paths on Windows before enforcing the exact source allowlist.
+- Validated full-stack startup and shutdown on hosted Windows, Linux and macOS runners.
+- Added clean source-archive reconstruction, SHA-256 checksums and a per-file manifest.
+
 ## 0.1.0-alpha.1
 
 - Created a clean cross-platform Core repository independent of the macOS Full runtime.

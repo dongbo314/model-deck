@@ -2,7 +2,7 @@
 
 Model Deck Core is a local, cross-platform control plane for OpenAI-compatible model providers and reusable personas. It gives Windows, Linux and macOS users one dashboard and one local API without bundling model weights, private credentials or hardware-specific runtimes.
 
-> **Status:** `0.1.0-alpha.1` Core Preview. The remote-provider path is implemented and covered by cross-platform CI. Local inference and media capability packs are roadmap items, not completed features.
+> **Status:** `0.1.0-alpha.2` Core Preview. The remote-provider path is implemented and covered by cross-platform CI. Local inference and media capability packs are roadmap items, not completed features.
 
 ## Editions
 
